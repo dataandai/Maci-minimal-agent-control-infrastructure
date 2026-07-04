@@ -1,0 +1,34 @@
+[project]
+name = "maci"
+version = "0.1.4"
+description = "Minimal agent control infrastructure for governed AWS Bedrock/Lambda agent systems"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+]
+aws = [
+  "boto3>=1.34.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+strict = false

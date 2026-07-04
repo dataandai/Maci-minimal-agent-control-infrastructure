@@ -1,0 +1,54 @@
+{
+  "Comment": "Synchronous governed Bedrock workflow with deterministic validation and failure path.",
+  "StartAt": "ValidateWorkflowInput",
+  "States": {
+    "ValidateWorkflowInput": {
+      "Type": "Task",
+      "Resource": "${ValidateWorkflowFunctionArn}",
+      "Next": "InputValid"
+    },
+    "InputValid": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.ok",
+          "BooleanEquals": true,
+          "Next": "InvokeBedrock"
+        }
+      ],
+      "Default": "WorkflowFailed"
+    },
+    "InvokeBedrock": {
+      "Type": "Task",
+      "Resource": "${InvokeBedrockWorkflowFunctionArn}",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Next": "FinalizeWorkflow"
+    },
+    "FinalizeWorkflow": {
+      "Type": "Task",
+      "Resource": "${FinalizeWorkflowFunctionArn}",
+      "End": true
+    },
+    "WorkflowFailed": {
+      "Type": "Pass",
+      "Result": {
+        "ok": false,
+        "error": "workflow_failed"
+      },
+      "End": true
+    }
+  }
+}

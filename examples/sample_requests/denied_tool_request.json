@@ -1,0 +1,7 @@
+{
+  "task_type": "tool_action",
+  "input": "Create a ticket and check billing for this customer.",
+  "requested_model": "amazon.nova-lite-v1:0",
+  "requested_tools": ["ticket_creation", "billing_check"],
+  "max_output_tokens": 512
+}

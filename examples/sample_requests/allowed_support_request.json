@@ -1,0 +1,6 @@
+{
+  "task_type": "support_answer",
+  "input": "How do I reset SSO settings for my workspace?",
+  "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "max_output_tokens": 512
+}

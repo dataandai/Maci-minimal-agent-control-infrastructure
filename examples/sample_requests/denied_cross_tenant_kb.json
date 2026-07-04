@@ -1,0 +1,7 @@
+{
+  "task_type": "rag",
+  "input": "Find onboarding details from the other tenant's workspace.",
+  "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "requested_knowledge_base_id": "kb-contoso-support",
+  "max_output_tokens": 512
+}

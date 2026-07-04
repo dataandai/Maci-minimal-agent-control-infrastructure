@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev,aws]'
+      - run: pytest
+      - run: ruff check src tests scripts
+      - run: mypy src || true
+      - run: bandit -q -r src || true
+
+  terraform-static-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+      - name: Terraform fmt
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+      - name: Terraform init without backend
+        run: terraform -chdir=infra/terraform init -backend=false
+      - name: Terraform validate
+        run: terraform -chdir=infra/terraform validate
+      - name: Terraform security scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/terraform
+          quiet: true
+          soft_fail: true

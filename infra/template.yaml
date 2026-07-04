@@ -1,0 +1,514 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Maci: minimal agent control infrastructure - deployable AWS starter for Maci
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedPattern: '^[a-z0-9-]+$'
+  EnableRealBedrock:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set true after Bedrock model access is enabled in this AWS account and region.
+  EnableBedrockAgent:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set true to have the router invoke the Bedrock Agent alias created by this template.
+  CreateBedrockAgent:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Creates an AWS::Bedrock::Agent and AgentAlias. Keep false if your account/region cannot create Bedrock Agents yet.
+  AgentFoundationModel:
+    Type: String
+    Default: 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+    Description: Foundation model ID or ARN for Bedrock Agent orchestration.
+  RequestRouterReservedConcurrency:
+    Type: Number
+    Default: 20
+  MonthlyCostAlarmUsd:
+    Type: Number
+    Default: 100
+
+Conditions:
+  CreateAgentResources: !Equals [!Ref CreateBedrockAgent, 'true']
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        AUDIT_TABLE_NAME: !Ref AuditTable
+        POLICY_TABLE_NAME: !Ref PolicyTable
+        USAGE_TABLE_NAME: !Ref UsageTable
+        CIRCUIT_BREAKER_TABLE_NAME: !Ref CircuitBreakerTable
+        TICKET_TABLE_NAME: !Ref TicketTable
+        ENABLE_REAL_BEDROCK: !Ref EnableRealBedrock
+        CIRCUIT_BREAKER_THRESHOLD: '3'
+        CIRCUIT_BREAKER_OPEN_SECONDS: '300'
+        METRICS_NAMESPACE: !Sub '${EnvironmentName}/Maci'
+
+Resources:
+  DemoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${EnvironmentName}-agent-control-plane-users'
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: tenant_id
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+
+  DemoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${EnvironmentName}-agent-control-plane-client'
+      UserPoolId: !Ref DemoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      ReadAttributes:
+        - email
+        - custom:tenant_id
+      WriteAttributes:
+        - email
+        - custom:tenant_id
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  AgentApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref EnvironmentName
+      Auth:
+        DefaultAuthorizer: JwtTenantAuthorizer
+        Authorizers:
+          JwtTenantAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${DemoUserPool}'
+              audience:
+                - !Ref DemoUserPoolClient
+            IdentitySource: '$request.header.Authorization'
+
+  RequestRouterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.request_router.lambda_handler
+      ReservedConcurrentExecutions: !Ref RequestRouterReservedConcurrency
+      Environment:
+        Variables:
+          WORKFLOW_STATE_MACHINE_ARN: !Ref AgentWorkflowStateMachine
+          ENABLE_BEDROCK_AGENT: !Ref EnableBedrockAgent
+          BEDROCK_AGENT_ID: !If [CreateAgentResources, !GetAtt GovernedBedrockAgent.AgentId, '']
+          BEDROCK_AGENT_ALIAS_ID: !If [CreateAgentResources, !GetAtt GovernedBedrockAgentAlias.AgentAliasId, '']
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PolicyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsageTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CircuitBreakerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TicketTable
+        - Statement:
+            - Sid: StartGovernedWorkflow
+              Effect: Allow
+              Action:
+                - states:StartSyncExecution
+              Resource: !Ref AgentWorkflowStateMachine
+        - Statement:
+            - Sid: InvokeAllowlistedFoundationModels
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:Converse
+                - bedrock:ConverseStream
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
+            - Sid: RetrieveFromTenantKnowledgeBasesOnly
+              Effect: Allow
+              Action:
+                - bedrock:Retrieve
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+            - Sid: InvokeGovernedAgentAlias
+              Effect: Allow
+              Action:
+                - bedrock:InvokeAgent
+              Resource: !If
+                - CreateAgentResources
+                - !GetAtt GovernedBedrockAgentAlias.AgentAliasArn
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:agent-alias/*/*'
+      Events:
+        Invoke:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AgentApi
+            Path: /agent/invoke
+            Method: POST
+
+  CustomerLookupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.agent_tools.customer_lookup.handler.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: !Ref PolicyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+
+  TicketCreationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.agent_tools.ticket_creation.handler.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: !Ref PolicyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TicketTable
+
+  WorkflowValidateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.workflow_steps.validate_workflow_input
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+  WorkflowInvokeBedrockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.workflow_steps.invoke_bedrock_step
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Sid: InvokeAllowlistedFoundationModels
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:Converse
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
+
+  WorkflowFinalizeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.workflow_steps.finalize_workflow
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+  AgentWorkflowStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: step-functions/agent_workflow.asl.json
+      DefinitionSubstitutions:
+        ValidateWorkflowFunctionArn: !GetAtt WorkflowValidateFunction.Arn
+        InvokeBedrockWorkflowFunctionArn: !GetAtt WorkflowInvokeBedrockFunction.Arn
+        FinalizeWorkflowFunctionArn: !GetAtt WorkflowFinalizeFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowValidateFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowInvokeBedrockFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowFinalizeFunction
+
+  CustomerLookupBedrockInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CustomerLookupFunction
+      Principal: bedrock.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
+
+  TicketCreationBedrockInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref TicketCreationFunction
+      Principal: bedrock.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
+
+  BedrockAgentServiceRole:
+    Type: AWS::IAM::Role
+    Condition: CreateAgentResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BedrockAgentModelInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
+
+  GovernedBedrockAgent:
+    Type: AWS::Bedrock::Agent
+    Condition: CreateAgentResources
+    Properties:
+      AgentName: !Sub '${EnvironmentName}-governed-support-agent'
+      AgentResourceRoleArn: !GetAtt BedrockAgentServiceRole.Arn
+      FoundationModel: !Ref AgentFoundationModel
+      AutoPrepare: true
+      IdleSessionTTLInSeconds: 900
+      Instruction: |
+        You are a governed B2B support agent. Never ask the user for tenant_id or user_id.
+        Tenant and user identity are provided only through secure session attributes by the application.
+        Use action-group functions only when needed and never invent tool parameters that are not defined.
+        For ticket creation, ask for confirmation when the action group requires it.
+      ActionGroups:
+        - ActionGroupName: customer_lookup
+          Description: Tenant-scoped customer lookup. Identity is provided through sessionAttributes only.
+          ActionGroupState: ENABLED
+          ActionGroupExecutor:
+            Lambda: !GetAtt CustomerLookupFunction.Arn
+          FunctionSchema:
+            Functions:
+              - Name: customer_lookup
+                Description: Look up a customer status inside the authenticated tenant boundary.
+                RequireConfirmation: DISABLED
+                Parameters:
+                  customer_id:
+                    Type: string
+                    Required: true
+                    Description: Customer identifier within the current tenant.
+                  reason:
+                    Type: string
+                    Required: true
+                    Description: Short reason for lookup. Do not include tenant_id.
+        - ActionGroupName: ticket_creation
+          Description: Tenant-scoped support ticket creation with idempotency.
+          ActionGroupState: ENABLED
+          ActionGroupExecutor:
+            Lambda: !GetAtt TicketCreationFunction.Arn
+          FunctionSchema:
+            Functions:
+              - Name: ticket_creation
+                Description: Create a customer support ticket inside the authenticated tenant boundary.
+                RequireConfirmation: ENABLED
+                Parameters:
+                  customer_id:
+                    Type: string
+                    Required: true
+                    Description: Customer identifier within the current tenant.
+                  title:
+                    Type: string
+                    Required: true
+                    Description: Short ticket title.
+                  description:
+                    Type: string
+                    Required: true
+                    Description: Detailed ticket description.
+                  priority:
+                    Type: string
+                    Required: false
+                    Description: One of low, medium, high, urgent.
+
+  GovernedBedrockAgentAlias:
+    Type: AWS::Bedrock::AgentAlias
+    Condition: CreateAgentResources
+    DependsOn: GovernedBedrockAgent
+    Properties:
+      AgentId: !Ref GovernedBedrockAgent
+      AgentAliasName: !Sub '${EnvironmentName}-live'
+      Description: !Sub 'Live alias for ${EnvironmentName} governed support agent'
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: event_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: event_id
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  PolicyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+
+  UsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: event_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: event_id
+          KeyType: RANGE
+
+  CircuitBreakerTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: category
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  TicketTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: ticket_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: ticket_key
+          KeyType: RANGE
+
+  ControlPlaneDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${EnvironmentName}-maci'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {"type":"metric","x":0,"y":0,"width":12,"height":6,"properties":{"metrics":[["${EnvironmentName}/Maci","PolicyDenied"],[".","ToolDenied"],[".","SchemaValidationFailed"]],"period":300,"stat":"Sum","region":"${AWS::Region}","title":"Governance denials"}},
+            {"type":"metric","x":12,"y":0,"width":12,"height":6,"properties":{"metrics":[["${EnvironmentName}/Maci","EstimatedCostUsd"]],"period":300,"stat":"Sum","region":"${AWS::Region}","title":"Estimated Maci cost"}}
+          ]
+        }
+
+Outputs:
+  AgentInvokeUrl:
+    Description: API endpoint for governed agent invocation
+    Value: !Sub 'https://${AgentApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/agent/invoke'
+  CognitoUserPoolId:
+    Value: !Ref DemoUserPool
+  CognitoUserPoolClientId:
+    Value: !Ref DemoUserPoolClient
+  PolicyTableName:
+    Value: !Ref PolicyTable
+  AuditTableName:
+    Value: !Ref AuditTable
+  UsageTableName:
+    Value: !Ref UsageTable
+  CircuitBreakerTableName:
+    Value: !Ref CircuitBreakerTable
+  TicketTableName:
+    Value: !Ref TicketTable
+  CustomerLookupFunctionArn:
+    Description: Lambda ARN attached to the Bedrock Agent action group.
+    Value: !GetAtt CustomerLookupFunction.Arn
+  TicketCreationFunctionArn:
+    Description: Lambda ARN attached to the Bedrock Agent action group.
+    Value: !GetAtt TicketCreationFunction.Arn
+  AgentWorkflowStateMachineArn:
+    Value: !Ref AgentWorkflowStateMachine
+  GovernedBedrockAgentId:
+    Condition: CreateAgentResources
+    Value: !GetAtt GovernedBedrockAgent.AgentId
+  GovernedBedrockAgentAliasId:
+    Condition: CreateAgentResources
+    Value: !GetAtt GovernedBedrockAgentAlias.AgentAliasId
+  GovernedBedrockAgentAliasArn:
+    Condition: CreateAgentResources
+    Value: !GetAtt GovernedBedrockAgentAlias.AgentAliasArn
