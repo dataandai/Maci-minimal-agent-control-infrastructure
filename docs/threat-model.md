@@ -1,51 +1,170 @@
-# Threat model — Agentic control plane
+# Threat Model
 
-This threat model maps the repository to 2026 agentic-system risks. It is intentionally focused on concrete control-plane protections, not prompt-only safety.
+This threat model focuses on governed AI agent execution in a multi-tenant AWS environment.
 
-## Primary assets
+---
 
-- Tenant identity and tenant-scoped policies.
-- Tenant Knowledge Base access.
-- Business tools: customer lookup, ticket creation, billing check, account credit.
-- Audit, usage, circuit-breaker and approval records.
-- Bedrock model/agent invocation permissions.
+## Assets
 
-## Core trust boundaries
+```text
+tenant identity
+customer records
+billing records
+tickets
+account credit/refund workflows
+conversation transcripts
+audit logs
+usage/cost records
+agent/tool policies
+approval records
+workflow state
+idempotency records
+AWS credentials and IAM roles
+```
 
-1. **Client -> API Gateway**: JWT/Cognito authorizer is the identity boundary.
-2. **API Gateway -> request router Lambda**: body fields are untrusted intent, not identity.
-3. **request router -> Bedrock Agent**: trusted tenant/user/agent context is injected via `sessionAttributes`.
-4. **Bedrock Agent -> tool Lambda**: model-generated tool parameters are untrusted and must pass strict schema + resource authorization.
-5. **Tool Lambda -> business backend**: tenant-scoped credentials and per-resource authorization are required.
+---
 
-## OWASP Agentic Applications risk mapping
+## Trust boundaries
 
-| Risk | Control implemented |
-|---|---|
-| Agent Goal Hijack | `guardrails.py` checks user input, retrieved context and model output; deterministic graph safe-stops on intervention. |
-| Tool Misuse & Exploitation | `tool_security.py`, `authorization.py`, and `resource_ownership.py` enforce tenant, agent, tool, action and concrete resource boundaries in each handler. |
-| Agent Identity & Privilege Abuse | `agent_registry.py` models first-class agent identities with status, human custodian, tools/actions and tenant binding. |
-| Agentic Supply Chain Compromise | `mcp_gateway.py` is only a centralized per-operation enforcement adapter for future MCP integrations. Full ASI04 mitigation still requires MCP server provenance, dependency scanning, signed releases and gateway deployment controls. |
-| Rogue Agent | `REQUIRE_AGENT_ID`, agent status checks and kill-switch/circuit-breaker state provide containment controls. |
-| Cross-tenant data exposure | Tenant context comes from JWT/session attributes and resource IDs are checked against tenant policy. |
-| High-risk action without approval | `account_credit` requires human approval through `approval.py` and `approval_review.handler`. |
+```text
+User browser / support console
+API Gateway / authorizer
+Request Router Lambda
+LLM / Bedrock Runtime
+Bedrock Agent Runtime / sessionAttributes
+Tool Lambda handlers
+DynamoDB state stores
+S3 audit/transcript archives
+External business backends
+Recovery daemon
+Human approval queue
+```
 
-## Lethal trifecta handling
+---
 
-The architecture separates:
+## Key threats and mitigations
 
-- private tenant data: Knowledge Base and backend tool results;
-- untrusted content: user input and retrieved text;
-- outbound action: tool calls and final responses.
+| Threat | Example | Mitigation |
+|---|---|---|
+| Tenant spoofing | User sends `tenant_id=other-tenant` | Tenant context derived from trusted identity; body mismatch denied |
+| Model tenant injection | LLM adds `tenant_id` to tool payload | Strict schemas with extra fields forbidden |
+| Cross-tenant resource access | Valid customer ID belongs to another tenant | Resource ownership table check |
+| Unauthorized tool use | Agent calls billing/write tool | Tenant policy + agent registry + per-operation auth |
+| High-risk action without approval | Model applies credit directly | `account_credit` creates/requires approval |
+| Approval replay | 500 USD approval reused for 5000 USD | Payload hash binding |
+| Duplicate write after retry | Ticket created twice | Idempotency store |
+| Prompt injection | User says ignore instructions | Input/retrieval/tool/output guardrails |
+| Retrieved-context injection | KB doc contains malicious instruction | Retrieved context guardrail |
+| Audit gap | Denied action not logged | Audit allow and deny paths |
+| Audit chain fork | Concurrent Lambda writes divergent hashes | DynamoDB chain-head conditional transaction pattern |
+| Runaway failures | repeated validation/tool denial | Circuit breaker + kill switch |
+| Partial workflow failure | crash after ticket but before response | Workflow state + recovery daemon + idempotency |
+| Recovery double-processing | overlapping daemon invocations | Conditional lease/fencing |
+| Unsafe recovery | daemon retries high-risk write | human-review classification for approval-adjacent states |
+| Conversation leakage | raw transcript exposed broadly | separate store, tenant-scoped access requirement, redaction/retention policy |
+| Secret leakage in logs | tokens printed in CloudWatch | redaction discipline and no raw credential logging |
 
-Guardrail checks and policy gates are placed before crossing from one category into another. High-risk outbound actions require explicit approval.
+---
 
-## Required production review
+## High-risk workflows
 
-Before production use, run:
+These should never be executed directly by the LLM or recovery daemon:
 
-- AWS IAM review for concrete ARNs;
-- Terraform plan review;
-- red-team tests for prompt injection and tool abuse;
-- audit-retention and PII-redaction review;
-- human approval/MFA review for high-risk actions.
+```text
+account credit
+refund
+billing adjustment
+permission escalation
+data deletion
+credential/secret operations
+```
+
+They require explicit policy, approval, idempotency and audit.
+
+---
+
+## Recovery-specific threats
+
+### Duplicate external writes
+
+If a workflow crashes after a write but before response, retry can duplicate the write.
+
+Mitigation:
+
+```text
+idempotency key before write
+workflow state after write
+external backend correlation ID
+recovery classification as idempotent_resume
+```
+
+### Ambiguous high-risk state
+
+If approval is approved but credit execution is unknown, blind retry is dangerous.
+
+Mitigation:
+
+```text
+human_review_required
+check idempotency record
+check billing backend
+manual operator decision
+audit operator decision
+```
+
+### Concurrent recovery workers
+
+Overlapping scheduled Lambdas may process the same workflow.
+
+Mitigation:
+
+```text
+conditional lease acquisition
+recovery_owner
+recovery_lease_until
+lease_busy outcome
+idempotency before writes
+```
+
+---
+
+## Conversation-specific threats
+
+### Storing too much
+
+Full prompts, raw backend payloads and hidden chain-of-thought can create privacy and security risk.
+
+Mitigation:
+
+```text
+store safe transcript messages
+store structured decision traces instead of hidden CoT
+redact secrets/PII where possible
+separate transcript from audit
+```
+
+### Unauthorized transcript access
+
+Support users should not see other tenants' conversations.
+
+Mitigation requirement:
+
+```text
+tenant-scoped read API
+role-based conversation access
+legal hold/export/delete controls
+```
+
+The storage foundation exists; the product read API must enforce this before production.
+
+---
+
+## Residual risks
+
+- LLM may still make poor plans or summaries.
+- Guardrails may miss novel prompt injection.
+- Real backend systems may have their own authorization bugs.
+- Misconfigured IAM can bypass intended boundaries.
+- Incorrect Terraform variables can deploy to wrong account/region.
+- Recovery integration with external backends requires additional reconciliation logic.
+- Compliance requirements depend on the deploying organization and jurisdiction.

@@ -34,6 +34,7 @@ class TenantContext(StrictModel):
     roles: tuple[str, ...] = Field(default_factory=tuple)
     request_id: str = Field(default_factory=lambda: str(uuid4()))
     agent_id: str | None = None
+    conversation_id: str | None = None
 
 
 class AgentRequest(StrictModel):
@@ -52,6 +53,7 @@ class AgentRequest(StrictModel):
     requested_knowledge_base_id: str | None = None
     requested_tools: tuple[str, ...] = Field(default_factory=tuple)
     max_output_tokens: PositiveInt = 1024
+    conversation_id: str | None = Field(default=None, min_length=1)
 
 
 class GovernedRequest(StrictModel):
@@ -64,11 +66,13 @@ class GovernedRequest(StrictModel):
     requested_knowledge_base_id: str | None = None
     requested_tools: tuple[str, ...] = Field(default_factory=tuple)
     max_output_tokens: PositiveInt = 1024
+    conversation_id: str | None = Field(default=None, min_length=1)
 
 
 class AgentResponse(StrictModel):
     request_id: str
     tenant_id: str
+    conversation_id: str | None = None
     answer: str
     model_id: str | None = None
     tool_calls: tuple[str, ...] = Field(default_factory=tuple)

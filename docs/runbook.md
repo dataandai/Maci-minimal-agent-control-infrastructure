@@ -1,102 +1,388 @@
-# Operational runbook
+# Operational Runbook
 
-## First checks
+This runbook describes how to operate and recover a Maci deployment.
 
-1. Check API Gateway 4XX/5XX metrics.
-2. Check Lambda errors for `RequestRouterFunction`.
-3. Check CloudWatch dashboard `<env>-maci`.
-4. Query audit events by `tenant_id` and `request_id`.
-5. Query circuit breaker table for open categories.
-6. Check tenant policy for allowed model/tool/KB and current spend.
+It assumes the Terraform stack has been deployed and the system is running with API Gateway, Lambda, DynamoDB, S3, CloudWatch, and EventBridge recovery daemon resources.
 
-## Common incidents
+---
 
-### 401 missing_trusted_identity
+## First checks during any incident
 
-Likely causes:
-
-- Missing `Authorization: Bearer <id token>` header.
-- API called with an access token that does not include the required custom claim.
-- Wrong Cognito app client / issuer.
-
-Action:
-
-- Decode the JWT and verify `custom:tenant_id` and `sub`.
-- Confirm API Gateway JWT authorizer issuer/audience.
-
-### 403 identity_mismatch
-
-Likely causes:
-
-- Body contains `tenant_id` or `user_id` different from JWT claims.
-- Client copied a sample request from another tenant.
-
-Action:
-
-- Remove identity fields from request body or make them match the token claims.
-- Treat repeated events as a possible impersonation attempt.
-
-### 403 policy_denied
-
-Likely causes:
-
-- Tenant requested a model not in `allowed_models`.
-- Tenant requested a KB not in `allowed_knowledge_base_ids`.
-- Tenant requested a tool not in `allowed_tools`.
-- Budget would be exceeded.
-
-Action:
-
-- Review the audit event attributes for denial reason.
-- Update tenant policy only through approved onboarding/change control.
-
-### Tool denied
-
-Likely causes:
-
-- Bedrock Agent invoked an action group that the tenant policy does not allow.
-- Session attributes contain an unknown tenant.
-
-Action:
-
-- Check Bedrock Agent trace and Lambda tool logs.
-- Confirm the application sent `tenant_id`, `user_id`, and `request_id` in `sessionAttributes`.
-
-### Duplicate ticket concern
-
-The ticket creation tool is idempotent per tenant/request/payload. If a user reports duplicates:
-
-- Query `TicketTable` by `tenant_id` and `ticket_key`.
-- Verify backend ticket integration also honors idempotency.
-- Check whether the external system created duplicates outside this control plane.
-
-### Budget/cost issue
-
-Action:
-
-- Query `UsageTable` by tenant.
-- Compare estimated usage with Bedrock/CUR billing data.
-- If budget is exceeded, the policy engine should deny new requests and the circuit breaker may open.
-
-## DynamoDB lookup examples
+Run these checks first:
 
 ```bash
-aws dynamodb query \
-  --table-name <AuditTableName> \
-  --key-condition-expression 'tenant_id = :t' \
-  --expression-attribute-values '{":t":{"S":"tenant-acme"}}'
+aws sts get-caller-identity
+aws configure get region
 ```
 
-```bash
-aws dynamodb get-item \
-  --table-name <CircuitBreakerTableName> \
-  --key '{"tenant_id":{"S":"tenant-acme"},"category":{"S":"tenant_budget_exceeded"}}'
+Confirm:
+
+```text
+correct AWS account
+correct AWS region
+correct environment
 ```
 
-## Rollback
+Then check:
 
-1. Disable real Bedrock calls by redeploying with `EnableRealBedrock=false`.
-2. Disable Bedrock Agent path by redeploying with `EnableBedrockAgent=false`.
-3. If a tool is risky, remove it from tenant policy immediately.
-4. If the API is unsafe, set reserved concurrency for the router Lambda to 0.
-5. Preserve audit logs before deleting any stack resources.
+```text
+API Gateway access logs
+Request Router Lambda logs
+Tool Lambda logs
+Recovery Daemon Lambda logs
+Step Functions executions if used
+CloudWatch metrics/alarms
+DynamoDB table health
+Bedrock model access/errors
+```
+
+---
+
+## Health indicators
+
+A healthy deployment should show:
+
+```text
+normal request latency
+low 4xx/5xx rate
+no unexpected AccessDenied errors
+audit events written
+usage events written
+conversation messages written
+workflow states transitioning
+recovery daemon processing small/expected numbers
+no growing backlog of stale workflows
+no unexpected open circuit breakers
+```
+
+---
+
+## Emergency stop options
+
+Use the smallest effective stop.
+
+```text
+1. Tool kill switch
+2. Agent kill switch
+3. Tenant kill switch
+4. Global kill switch
+5. Pause recovery daemon schedule
+6. Roll back Lambda code
+7. Roll back Terraform change
+```
+
+Examples:
+
+```text
+Disable account_credit globally if financial write path is suspicious.
+Disable one tenant if only that tenant is triggering bad workflows.
+Pause recovery daemon if it is misclassifying workflows.
+```
+
+Do not destroy infrastructure as a first response.
+
+---
+
+## Incident: API returns 401/403
+
+Likely causes:
+
+```text
+JWT missing or invalid
+wrong Cognito client/user pool
+expired token
+tenant/user mismatch
+policy deny
+resource ownership deny
+agent suspended/revoked
+kill switch open
+```
+
+Check:
+
+```text
+API Gateway authorizer logs
+Request Router logs
+audit event for policy_denied or identity_mismatch
+agent registry status
+tenant policy record
+resource ownership record
+kill switch table
+```
+
+---
+
+## Incident: API returns 500
+
+Likely causes:
+
+```text
+Lambda exception
+missing environment variable
+DynamoDB AccessDenied
+Bedrock AccessDenied/throttling
+schema validation bug
+unexpected tool backend error
+```
+
+Check:
+
+```text
+Request Router Lambda logs
+Tool Lambda logs
+CloudWatch error metric
+trace_id / request_id
+audit event around failure
+```
+
+Fix the first concrete error. Do not randomly widen IAM policies.
+
+---
+
+## Incident: Bedrock model call fails
+
+Common errors:
+
+```text
+AccessDeniedException
+model access not enabled
+invalid model identifier
+region mismatch
+throttling
+timeout
+```
+
+Check:
+
+```text
+model ID configured in tenant policy
+region
+Bedrock model access in AWS console
+Lambda IAM permission for Bedrock Runtime/Agent Runtime
+CloudWatch logs for Bedrock Gateway
+```
+
+If throttling or repeated timeout occurs:
+
+```text
+enable/observe circuit breaker
+reduce concurrency
+use backoff
+consider fallback/degraded response
+```
+
+---
+
+## Incident: account_credit executed before approval
+
+This is a critical security/business bug.
+
+Expected behavior:
+
+```text
+account_credit without valid approval => pending_approval
+no credit applied
+approval bound to exact payload
+```
+
+Immediate actions:
+
+```text
+enable account_credit tool kill switch
+preserve audit logs
+check approval table
+check idempotency table
+check billing backend state
+review account_credit handler
+add failing regression test
+```
+
+Do not re-enable until the bug is fixed and tested.
+
+---
+
+## Incident: duplicate ticket or duplicate external write
+
+Likely cause:
+
+```text
+missing idempotency key
+idempotency table unavailable
+retry path bypassed idempotency
+recovery resumed incorrectly
+```
+
+Check:
+
+```text
+idempotency table
+workflow state
+conversation metadata
+tool audit events
+external backend write IDs
+```
+
+Fix:
+
+```text
+ensure idempotency key is generated before write
+ensure retry path checks idempotency first
+add regression test for crash/retry scenario
+```
+
+---
+
+## Incident: stale workflows growing
+
+Likely causes:
+
+```text
+Recovery daemon not scheduled
+Recovery daemon IAM failure
+recovery_due_index missing or broken
+lease stuck due to long lease
+max attempts exceeded
+human review queue not processed
+```
+
+Check:
+
+```text
+EventBridge rule enabled
+Recovery Daemon Lambda logs
+workflow state table
+recovery_due_index
+recovery_owner and recovery_lease_until
+recovery_attempts
+conversation system_status messages
+```
+
+Actions:
+
+```text
+fix daemon IAM/config
+manually invoke daemon with max_items small
+escalate max-attempt workflows
+review recurring failure reason
+```
+
+---
+
+## Incident: recovery daemon double-processing
+
+Expected protection:
+
+```text
+conditional lease prevents double claim
+```
+
+If double-processing appears:
+
+```text
+pause EventBridge rule
+check DynamoDB conditional write logic
+check recovery_owner / recovery_lease_until fields
+check clock/TTL/backoff configuration
+verify idempotency protection for resumed writes
+```
+
+---
+
+## Incident: audit missing on deny
+
+Denied actions are security-relevant.
+
+Check:
+
+```text
+tool handler deny branches
+AuditLogger configuration
+DynamoDB audit table write permission
+S3 archive permission if enabled
+CloudWatch logs for audit fallback
+```
+
+Fix:
+
+```text
+audit both allow and deny branches
+include denial reason
+add regression test
+```
+
+---
+
+## Incident: conversation history missing
+
+Check:
+
+```text
+CONVERSATION_TABLE_NAME
+CONVERSATION_TRANSCRIPT_BUCKET
+DynamoDB table permissions
+S3 PutObject permissions
+request contains or generates conversation_id
+ConversationStore local/DynamoDB mode
+```
+
+Remember:
+
+```text
+conversation transcript missing != audit missing
+```
+
+They are separate systems.
+
+---
+
+## Manual recovery process
+
+For ambiguous/high-risk workflows:
+
+```text
+1. Locate conversation_id and workflow_id.
+2. Read workflow state record.
+3. Read conversation transcript.
+4. Read audit events.
+5. Read approval record if any.
+6. Read idempotency record.
+7. Check external backend state.
+8. Decide: resume, mark failed_safe, or escalate.
+9. Write an audit event for the operator decision.
+10. Update conversation status if user/support visibility is needed.
+```
+
+Never manually execute high-risk writes without checking approval, payload hash, and idempotency.
+
+---
+
+## Safe cleanup
+
+Before `terraform destroy`:
+
+```text
+confirm account and region
+confirm environment is dev/lab
+check Object Lock retention
+check non-empty S3 buckets
+check DynamoDB data needs
+preserve audit logs if needed
+```
+
+Object Lock can intentionally prevent deletion.
+
+---
+
+## Escalation criteria
+
+Escalate to human/security review if:
+
+```text
+cross-tenant access suspected
+financial action ambiguity
+approval replay suspected
+audit chain inconsistency
+conversation contains leaked data
+kill switch was triggered unexpectedly
+recovery daemon repeatedly escalates same state
+```

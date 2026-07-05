@@ -163,3 +163,34 @@ variable "audit_archive_retention_days" {
   type        = number
   default     = 30
 }
+
+
+variable "recovery_schedule_expression" {
+  description = "EventBridge schedule expression for the recovery daemon."
+  type        = string
+  default     = "rate(5 minutes)"
+}
+
+variable "recovery_max_items" {
+  description = "Maximum stale workflows reconciled by the recovery daemon per run."
+  type        = number
+  default     = 25
+}
+
+variable "recovery_stale_seconds" {
+  description = "Grace period before active workflows become eligible for recovery."
+  type        = number
+  default     = 300
+}
+
+variable "recovery_lease_seconds" {
+  description = "Lease duration used by the recovery daemon to fence concurrent workers."
+  type        = number
+  default     = 120
+}
+
+variable "recovery_max_attempts" {
+  description = "Maximum recovery attempts before a stale workflow is escalated to human review."
+  type        = number
+  default     = 3
+}

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from .audit import AuditEvent, AuditEventType, AuditLogger
 from .bedrock_gateway import BedrockGateway
 from .circuit_breaker import FailureCategory, TenantCircuitBreaker
+from .conversation import ConversationStatus, ConversationStore
 from .cost import CostEstimator, UsageLedger, UsageLedgerEvent
 from .guardrails import GuardrailChecker, GuardrailIntervention
 from .identity import MissingIdentityError, tenant_context_from_api_gateway_event
@@ -18,6 +19,7 @@ from .model_router import ModelRouter
 from .observability import TraceRecorder
 from .policy_engine import PolicyEngine, PolicyViolation
 from .policy_store import PolicyStore
+from .recovery import WorkflowStateStore, WorkflowStatus
 from .schemas import (
     AgentRequest,
     AgentResponse,
@@ -55,6 +57,8 @@ circuit_breaker = TenantCircuitBreaker(
     open_seconds=int(os.getenv("CIRCUIT_BREAKER_OPEN_SECONDS", "300")),
     table=_dynamodb_table_from_env("CIRCUIT_BREAKER_TABLE_NAME"),
 )
+conversation_store = ConversationStore()
+workflow_state_store = WorkflowStateStore()
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -95,6 +99,11 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         payload = json.loads(body) if isinstance(body, str) else body
         request = AgentRequest.model_validate(payload)
         governed_request = policy_engine.bind_request(request, tenant_context)
+        conversation = conversation_store.start_or_resume(tenant_context, conversation_id=request.conversation_id)
+        tenant_context = tenant_context.model_copy(update={"conversation_id": conversation.conversation_id})
+        governed_request = governed_request.model_copy(update={"tenant_context": tenant_context, "conversation_id": conversation.conversation_id})
+        conversation_store.append_user_message(tenant_context, conversation.conversation_id, request.input)
+        workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.IDENTITY_BOUND)
     except (json.JSONDecodeError, ValidationError) as exc:
         circuit_breaker.record_failure(tenant_context.tenant_id, FailureCategory.SCHEMA_VALIDATION_FAILED)
         emit_metric("SchemaValidationFailed", 1, dimensions={"tenant_id": tenant_context.tenant_id})
@@ -119,9 +128,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
             tenant_id=tenant_context.tenant_id,
             event_type=AuditEventType.REQUEST_RECEIVED,
             message="request received by router",
-            attributes={"task_type": request.task_type.value},
+            attributes={"task_type": request.task_type.value, "conversation_id": conversation.conversation_id},
         )
     )
+    workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.RECEIVED)
 
     try:
         policy = policy_store.get_policy(tenant_context.tenant_id)
@@ -141,6 +151,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
                 guardrail_version=policy.guardrail_version,
             )
             decision = policy_engine.enforce(governed_request, policy)
+            workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.GUARDRAIL_PASSED)
     except KeyError as exc:
         circuit_breaker.record_failure(tenant_context.tenant_id, FailureCategory.UNKNOWN)
         return _response(403, {"error": "unknown_tenant", "details": str(exc)})
@@ -156,7 +167,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
             )
         )
         emit_metric("GuardrailIntervened", 1, dimensions={"tenant_id": tenant_context.tenant_id, "step": exc.result.step})
-        return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason, "findings": exc.result.findings})
+        conversation_store.append_system_status(tenant_context, conversation.conversation_id, {"error": "guardrail_intervened", "reason": exc.result.reason})
+        conversation_store.update_status(tenant_context.tenant_id, conversation.conversation_id, ConversationStatus.FAILED_SAFE)
+        workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FAILED_SAFE, last_error=exc.result.reason)
+        return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason, "findings": exc.result.findings, "conversation_id": conversation.conversation_id})
     except PolicyViolation as exc:
         category = _policy_violation_to_category(exc.reason)
         circuit_breaker.record_failure(tenant_context.tenant_id, category)
@@ -170,7 +184,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
             )
         )
         emit_metric("PolicyDenied", 1, dimensions={"tenant_id": tenant_context.tenant_id, "category": category.value})
-        return _response(403, {"error": "policy_denied", "reason": exc.reason})
+        conversation_store.append_system_status(tenant_context, conversation.conversation_id, {"error": "policy_denied", "reason": exc.reason})
+        conversation_store.update_status(tenant_context.tenant_id, conversation.conversation_id, ConversationStatus.FAILED_SAFE)
+        workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FAILED_SAFE, last_error=exc.reason)
+        return _response(403, {"error": "policy_denied", "reason": exc.reason, "conversation_id": conversation.conversation_id})
 
     audit_logger.emit(
         AuditEvent(
@@ -178,9 +195,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
             tenant_id=tenant_context.tenant_id,
             event_type=AuditEventType.POLICY_ALLOWED,
             message="tenant policy allowed request",
-            attributes=decision.model_dump(mode="json"),
+            attributes={**decision.model_dump(mode="json"), "conversation_id": conversation.conversation_id},
         )
     )
+    workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.POLICY_CHECKED)
 
     mode = "direct"
     prompt = request.input
@@ -220,6 +238,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     agent_id = os.getenv("BEDROCK_AGENT_ID")
     agent_alias_id = os.getenv("BEDROCK_AGENT_ALIAS_ID")
     use_agent = os.getenv("ENABLE_BEDROCK_AGENT", "false").lower() == "true" and agent_id and agent_alias_id
+    workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.PLANNING_STARTED)
 
     if request.task_type == TaskType.WORKFLOW and workflow_arn:
         mode = "workflow"
@@ -286,7 +305,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     except GuardrailIntervention as exc:
         circuit_breaker.record_failure(tenant_context.tenant_id, FailureCategory.GUARDRAIL_INTERVENED)
         audit_logger.emit(AuditEvent(request_id=tenant_context.request_id, tenant_id=tenant_context.tenant_id, event_type=AuditEventType.GUARDRAIL_INTERVENED, message=exc.result.reason, attributes=exc.result.model_dump(mode="json")))
-        return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason})
+        conversation_store.append_system_status(tenant_context, conversation.conversation_id, {"error": "output_guardrail_intervened", "reason": exc.result.reason})
+        conversation_store.update_status(tenant_context.tenant_id, conversation.conversation_id, ConversationStatus.FAILED_SAFE)
+        workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FAILED_SAFE, last_error=exc.result.reason)
+        return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason, "conversation_id": conversation.conversation_id})
 
     circuit_breaker.record_success(tenant_context.tenant_id, FailureCategory.BEDROCK_THROTTLED)
 
@@ -322,9 +344,14 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         )
     )
 
+    conversation_store.append_assistant_message(tenant_context, conversation.conversation_id, answer)
+    conversation_store.update_status(tenant_context.tenant_id, conversation.conversation_id, ConversationStatus.COMPLETED)
+    workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FINAL_RESPONSE_SENT)
+
     response = AgentResponse(
         request_id=tenant_context.request_id,
         tenant_id=tenant_context.tenant_id,
+        conversation_id=conversation.conversation_id,
         answer=answer,
         model_id=model_id,
         tool_calls=request.requested_tools,

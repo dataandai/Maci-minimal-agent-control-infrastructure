@@ -70,6 +70,7 @@ class BedrockGateway:
                         "user_id": request.tenant_context.user_id,
                         "request_id": request.tenant_context.request_id,
                         "roles": " ".join(request.tenant_context.roles),
+                        **({"conversation_id": request.tenant_context.conversation_id} if request.tenant_context.conversation_id else {}),
                     }
                 },
             )

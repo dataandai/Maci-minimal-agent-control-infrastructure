@@ -27,6 +27,7 @@ class AuditEventType(str, Enum):
     SCHEMA_VALIDATION_FAILED = "schema_validation_failed"
     CIRCUIT_BREAKER_TRIPPED = "circuit_breaker_tripped"
     TRACE_RECORDED = "trace_recorded"
+    RECOVERY_ACTION = "recovery_action"
 
 
 class AuditEvent(StrictModel):

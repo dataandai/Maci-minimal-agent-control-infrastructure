@@ -1,45 +1,194 @@
-# Limitations and deployment truth table
+# Limitations
 
-This repository is no longer a toy skeleton: it now includes deployable AWS infrastructure, tenant/JWT identity, per-tool and per-resource authorization, a first-class agent identity registry, high-risk approval workflow, durable audit/usage/circuit-breaker storage options, and adversarial tests.
+This document states what Maci does not prove yet.
 
-However, **production-ready is an operational claim**, not just a code claim. The following points must still be validated in the target AWS account before real customer data is handled.
+The goal is to keep the repository honest.
 
-## Implemented locally and covered by tests
+---
 
-- Tenant identity comes from trusted JWT/Cognito or Bedrock Agent `sessionAttributes`, not model-generated parameters.
-- Tool schemas use Pydantic v2 strict models and reject unknown identity/tool arguments.
-- Every tool handler performs per-operation checks, not only an initial request-router check.
-- Resource-level checks can deny semantically valid but cross-tenant-looking customer IDs.
-- Agent identity can be active/suspended/revoked and constrained by tool/action permissions.
-- High-risk account credit action requires explicit human approval before execution.
-- Circuit breaker state supports DynamoDB backing with local fallback, and tenant-level any-category checks query the tenant partition in DynamoDB mode.
-- Audit events are hash-chained locally and, when DynamoDB is configured, advance a per-tenant chain head with a conditional transaction before optional S3 Object Lock archive storage.
-- OTel-shaped traces can be emitted and turned into eval/regression cases.
-- A deterministic graph runtime demonstrates state graph orchestration, strict output validation, self-correction attempts, and safe-stop behavior.
+## Current honest status
 
-## Still requires AWS-account validation
+Maci v0.1.6 is a locally verified, AWS-deployable foundation.
 
-- `terraform fmt`, `terraform validate`, and `terraform plan` must pass in your environment. This sandbox does not include Terraform.
-- Bedrock model access must be enabled in the chosen region before `enable_real_bedrock=true`.
-- Bedrock Agent action groups and aliases must be wired to real agent IDs if `enable_bedrock_agent=true`.
-- S3 Object Lock retention must be accepted as a compliance and lifecycle choice before using immutable audit archive in production.
-- IAM policies must be reviewed and tightened to concrete production ARNs, especially Knowledge Base ARNs and Bedrock Agent source ARNs.
-- The demo CRM/billing/ticketing tool implementations must be replaced with real backend integrations and tenant-scoped credentials.
-- Cost estimates are still a control-plane estimator; reconcile them against CUR/Cost Explorer before chargeback.
-- Hardware-backed approval/MFA must be enforced at the IdP layer for truly high-risk financial or destructive actions.
+It includes code and tests for:
 
-## Not included yet
+- trusted identity boundaries;
+- strict schemas;
+- tenant policy checks;
+- resource ownership;
+- approval flow;
+- audit and usage ledgers;
+- conversation history foundation;
+- workflow state;
+- idempotency;
+- recovery daemon foundation;
+- circuit breakers and kill switches.
 
-- Full admin UI for tenant onboarding and policy editing.
-- Real MCP transport server; `mcp_gateway.py` implements the policy boundary that such a server should call.
-- Real SIEM integration.
-- Production load tests and chaos/failover test suite.
-- Full OpenTelemetry SDK exporter dependency; the code emits OTel-shaped JSON spans to avoid vendor lock-in and keep the lab lightweight.
+It does not prove your AWS production environment is ready.
 
+---
 
-## Code-audit follow-up
+## Terraform not proven by local tests
 
-- Terraform still must be validated in a real toolchain (`terraform fmt`, `terraform validate`, `terraform plan`). The repository includes CI config for this, but this sandbox did not have Terraform installed.
-- The MCP gateway module remains a policy-boundary adapter, not a complete MCP transport server with provenance/SCA/signing. Do not describe it as full ASI04 supply-chain mitigation by itself.
-- Resource ownership is now implementable via a DynamoDB table. Production must set `REQUIRE_RESOURCE_OWNERSHIP=true`; prefix fallback exists only for the beginner dev lab.
-- Human approval now binds approvals to the exact payload hash, but real production still needs IdP/MFA hardening for approver roles.
+Python tests do not validate live AWS deployment.
+
+You must run in the target AWS account:
+
+```bash
+terraform -chdir=infra/terraform fmt -recursive
+terraform -chdir=infra/terraform init
+terraform -chdir=infra/terraform validate
+terraform -chdir=infra/terraform plan -var-file=environments/dev/terraform.tfvars
+terraform -chdir=infra/terraform apply -var-file=environments/dev/terraform.tfvars
+```
+
+Potential AWS-only failures:
+
+- missing IAM permissions;
+- region mismatch;
+- Bedrock model access missing;
+- S3 bucket name conflict;
+- Object Lock constraints;
+- DynamoDB index limits;
+- Lambda package path issues;
+- API Gateway authorizer configuration issues;
+- service quotas.
+
+---
+
+## Bedrock access is environment-specific
+
+The repository cannot prove:
+
+- your account has access to the selected model;
+- the model exists in your chosen region;
+- Bedrock Guardrails/Knowledge Bases/Agent aliases are configured;
+- your Lambda roles have exact runtime permissions;
+- latency and throttling are acceptable.
+
+---
+
+## Conversation history is a foundation, not a finished product UI
+
+Implemented:
+
+- `ConversationStore`;
+- `conversation_id` / `message_id`;
+- DynamoDB metadata/message index pattern;
+- optional S3 transcript archive;
+- user/assistant/system-status message types.
+
+Still needed for a product:
+
+- conversation list/read API;
+- user/support/admin UI;
+- tenant-scoped access-control enforcement on read APIs;
+- export/delete workflows;
+- legal hold workflow;
+- redaction pipeline;
+- retention enforcement.
+
+---
+
+## Recovery daemon is a foundation, not a complete orchestrator
+
+Implemented:
+
+- due-record scan;
+- GSI pattern;
+- lease-based claim;
+- resume classification;
+- retry/backoff;
+- human escalation;
+- recovery audit/status messages.
+
+Still needed for production:
+
+- integration with your selected orchestrator resume mechanism;
+- Step Functions redrive/resume strategy if used;
+- queue/task dispatch for resumed work;
+- operator UI for escalated workflows;
+- backend reconciliation for ambiguous external writes;
+- chaos testing.
+
+The daemon intentionally does not directly execute high-risk actions.
+
+---
+
+## MCP scope is limited
+
+The MCP registry/provenance code is a policy-boundary foundation.
+
+It is not a complete MCP transport server.
+
+Still needed:
+
+- full MCP server/client transport;
+- server signing or stronger attestation if required;
+- dependency/SCA process;
+- runtime credential boundary;
+- per-operation policy enforcement around actual MCP calls.
+
+---
+
+## Audit is not a compliance certificate
+
+Maci provides audit foundations:
+
+- audit events;
+- allow/deny logging;
+- event hashes;
+- DynamoDB chain-head concurrency hardening;
+- optional S3 Object Lock archive.
+
+Your organization must still define:
+
+- retention policy;
+- legal hold policy;
+- deletion/export policy;
+- access controls;
+- compliance mapping;
+- monitoring and review process.
+
+---
+
+## Tool integrations are demos/stubs
+
+The current tools model the boundaries:
+
+- customer lookup;
+- billing check;
+- ticket creation;
+- account credit approval.
+
+Real deployments must replace demo integrations with real tenant-scoped CRM/ticketing/billing systems and credentials.
+
+---
+
+## No production load guarantee
+
+The repository does not prove:
+
+- high concurrency behavior in your account;
+- Bedrock throttling behavior;
+- DynamoDB hot partition behavior;
+- S3/KMS throughput;
+- Lambda cold-start impact;
+- cost under real workloads.
+
+Run load and chaos tests.
+
+---
+
+## LLM correctness is not guaranteed
+
+Maci controls execution boundaries.
+
+It does not guarantee that the model always:
+
+- interprets the customer issue correctly;
+- chooses the optimal next step;
+- writes the best final answer;
+- avoids all hallucinations.
+
+Output validation, guardrails, tool results, and human review reduce risk. They do not make model reasoning perfect.

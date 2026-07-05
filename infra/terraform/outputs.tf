@@ -62,3 +62,10 @@ output "resource_ownership_table_name" { value = module.dynamodb.resource_owners
 output "kill_switch_table_name" { value = module.dynamodb.kill_switch_table_name }
 output "mcp_registry_table_name" { value = module.dynamodb.mcp_registry_table_name }
 output "admin_lambda_name" { value = module.admin.function_name }
+
+output "conversation_table_name" { value = module.dynamodb.conversation_table_name }
+output "conversation_transcript_bucket" { value = aws_s3_bucket.conversation_transcripts.bucket }
+output "workflow_state_table_name" { value = module.dynamodb.workflow_state_table_name }
+output "idempotency_table_name" { value = module.dynamodb.idempotency_table_name }
+output "recovery_daemon_function_name" { value = module.recovery_daemon.function_name }
+output "recovery_daemon_schedule_name" { value = aws_cloudwatch_event_rule.recovery_daemon.name }

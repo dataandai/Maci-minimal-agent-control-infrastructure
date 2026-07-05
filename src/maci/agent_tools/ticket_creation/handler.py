@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from ...audit import AuditEvent, AuditEventType, AuditLogger
+from ...conversation import ConversationStore
 from ...authorization import AuthorizationError, ResourceAuthorizer
 from ...bedrock_agent_event import BedrockAgentEventError, extract_model_parameters
 from ...bedrock_agent_response import bedrock_function_response
@@ -14,6 +15,7 @@ from ...identity import MissingIdentityError, tenant_context_from_bedrock_agent_
 from ...guardrails import GuardrailChecker, GuardrailIntervention
 from ...idempotency import TicketStore, deterministic_ticket_key
 from ...metrics import emit_metric
+from ...recovery import WorkflowStateStore, WorkflowStatus
 from ...schemas import ResourceAction, RiskLevel, TicketCreationInput, TicketCreationOutput, ToolName
 from ...tool_security import ToolSecurityError, enforce_tool_allowed
 
@@ -21,6 +23,8 @@ _audit = AuditLogger()
 _ticket_store = TicketStore()
 _authorizer = ResourceAuthorizer()
 _guardrails = GuardrailChecker()
+_conversation_store = ConversationStore()
+_workflow_state_store = WorkflowStateStore()
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -78,6 +82,23 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         priority=request.priority,
         created=created,
     )
+    _workflow_state_store.transition(
+        tenant_context,
+        conversation_id=_conversation_id(tenant_context),
+        status=WorkflowStatus.TICKET_CREATED,
+        idempotency_key=ticket_key,
+        metadata={"tool": ToolName.TICKET_CREATION.value, "customer_id": request.customer_id, "ticket_id": ticket_id, "created": created},
+    )
+    _conversation_store.append_tool_result_summary(
+        tenant_context,
+        _conversation_id(tenant_context),
+        ToolName.TICKET_CREATION.value,
+        {"customer_id": request.customer_id, "ticket_id": ticket_id, "created": created},
+    )
     _audit.emit(AuditEvent(request_id=tenant_context.request_id, tenant_id=tenant_context.tenant_id, event_type=AuditEventType.TOOL_INVOKED, message="ticket_creation invoked", attributes={"customer_id": request.customer_id, "ticket_id": ticket_id, "created": created, "agent_id": tenant_context.agent_id}))
     emit_metric("ToolInvoked", 1, dimensions={"tenant_id": tenant_context.tenant_id, "tool": ToolName.TICKET_CREATION.value})
     return bedrock_function_response(event, 200, result.model_dump(mode="json"))
+
+
+def _conversation_id(tenant_context):
+    return tenant_context.conversation_id or f"conv-{tenant_context.request_id}"

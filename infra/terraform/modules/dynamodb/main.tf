@@ -254,3 +254,116 @@ resource "aws_dynamodb_table" "mcp_registry" {
 
   tags = var.tags
 }
+
+resource "aws_dynamodb_table" "conversation" {
+  name         = "${var.name_prefix}-conversation"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "tenant_id"
+  range_key    = "record_key"
+
+  attribute {
+    name = "tenant_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "record_key"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  ttl {
+    attribute_name = "expires_at_epoch"
+    enabled        = true
+  }
+
+  tags = var.tags
+}
+
+resource "aws_dynamodb_table" "workflow_state" {
+  name         = "${var.name_prefix}-workflow-state"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "tenant_id"
+  range_key    = "workflow_id"
+
+  attribute {
+    name = "tenant_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "workflow_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "recovery_partition"
+    type = "S"
+  }
+
+  attribute {
+    name = "recovery_due_at_epoch"
+    type = "N"
+  }
+
+  global_secondary_index {
+    name            = "recovery_due_index"
+    hash_key        = "recovery_partition"
+    range_key       = "recovery_due_at_epoch"
+    projection_type = "ALL"
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  ttl {
+    attribute_name = "expires_at_epoch"
+    enabled        = true
+  }
+
+  tags = var.tags
+}
+
+resource "aws_dynamodb_table" "idempotency" {
+  name         = "${var.name_prefix}-idempotency"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "tenant_id"
+  range_key    = "idempotency_key"
+
+  attribute {
+    name = "tenant_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "idempotency_key"
+    type = "S"
+  }
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  ttl {
+    attribute_name = "expires_at_epoch"
+    enabled        = true
+  }
+
+  tags = var.tags
+}

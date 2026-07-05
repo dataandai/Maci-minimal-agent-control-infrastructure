@@ -11,6 +11,54 @@ module "audit_archive" {
   tags                       = local.tags
 }
 
+resource "aws_s3_bucket" "conversation_transcripts" {
+  bucket        = "${local.name_prefix}-conversation-transcripts-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  force_destroy = var.environment == "dev"
+
+  tags = merge(local.tags, { DataClass = "conversation-transcript" })
+}
+
+resource "aws_s3_bucket_public_access_block" "conversation_transcripts" {
+  bucket                  = aws_s3_bucket.conversation_transcripts.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "conversation_transcripts" {
+  bucket = aws_s3_bucket.conversation_transcripts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "conversation_transcripts" {
+  bucket = aws_s3_bucket.conversation_transcripts.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "conversation_transcripts" {
+  bucket = aws_s3_bucket.conversation_transcripts.id
+
+  rule {
+    id     = "expire-dev-conversation-transcripts"
+    status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+}
+
 module "auth" {
   source      = "./modules/auth"
   name_prefix = local.name_prefix
@@ -140,6 +188,12 @@ module "account_credit" {
       Effect   = "Allow"
       Action   = local.dynamodb_crud_actions
       Resource = [module.dynamodb.approval_table_arn]
+    },
+    {
+      Sid      = "ManageOperationIdempotency"
+      Effect   = "Allow"
+      Action   = local.dynamodb_crud_actions
+      Resource = [module.dynamodb.idempotency_table_arn]
     },
     {
       Sid      = "WriteAuditEvents"
@@ -283,7 +337,10 @@ module "request_router" {
           module.dynamodb.agent_registry_table_arn,
           module.dynamodb.resource_ownership_table_arn,
           module.dynamodb.kill_switch_table_arn,
-          module.dynamodb.mcp_registry_table_arn
+          module.dynamodb.mcp_registry_table_arn,
+          module.dynamodb.conversation_table_arn,
+          module.dynamodb.workflow_state_table_arn,
+          module.dynamodb.idempotency_table_arn
         ]
       },
       {
@@ -291,6 +348,12 @@ module "request_router" {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
         Resource = ["${module.audit_archive.bucket_arn}/*"]
+      },
+      {
+        Sid      = "WriteConversationTranscripts"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = ["${aws_s3_bucket.conversation_transcripts.arn}/*"]
       },
       {
         Sid      = "StartGovernedWorkflow"
@@ -327,6 +390,65 @@ module "request_router" {
       }
     ] : []
   )
+}
+
+
+module "recovery_daemon" {
+  source        = "./modules/lambda_function"
+  function_name = "${local.name_prefix}-recovery-daemon"
+  description   = "Scheduled lease-based recovery daemon for stale governed agent workflows"
+  source_dir    = local.source_dir
+  python_bin    = var.lambda_build_python
+  handler       = "maci.recovery.lambda_handler"
+  runtime       = "python3.12"
+  memory_size   = var.lambda_memory_size
+  timeout       = 60
+  reserved_concurrent_executions = 1
+  log_retention_days = var.log_retention_days
+  environment_variables = local.common_lambda_environment
+  tags = local.tags
+
+  policy_statements = [
+    {
+      Sid      = "ManageRecoveryTables"
+      Effect   = "Allow"
+      Action   = local.dynamodb_crud_actions
+      Resource = [
+        module.dynamodb.workflow_state_table_arn,
+        module.dynamodb.conversation_table_arn,
+        module.dynamodb.audit_table_arn,
+        module.dynamodb.idempotency_table_arn
+      ]
+    },
+    {
+      Sid      = "WriteConversationRecoveryStatus"
+      Effect   = "Allow"
+      Action   = ["s3:PutObject"]
+      Resource = ["${aws_s3_bucket.conversation_transcripts.arn}/*"]
+    }
+  ]
+}
+
+resource "aws_cloudwatch_event_rule" "recovery_daemon" {
+  name                = "${local.name_prefix}-recovery-daemon"
+  description         = "Periodic stale workflow recovery reconciliation"
+  schedule_expression = var.recovery_schedule_expression
+  tags                = local.tags
+}
+
+resource "aws_cloudwatch_event_target" "recovery_daemon" {
+  rule      = aws_cloudwatch_event_rule.recovery_daemon.name
+  target_id = "${local.name_prefix}-recovery-daemon"
+  arn       = module.recovery_daemon.function_arn
+  input     = jsonencode({ max_items = var.recovery_max_items })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_recovery_daemon" {
+  statement_id  = "AllowEventBridgeRecoveryDaemon"
+  action        = "lambda:InvokeFunction"
+  function_name = module.recovery_daemon.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.recovery_daemon.arn
 }
 
 
@@ -423,7 +545,10 @@ module "observability" {
     module.dynamodb.agent_registry_table_name,
     module.dynamodb.resource_ownership_table_name,
     module.dynamodb.kill_switch_table_name,
-    module.dynamodb.mcp_registry_table_name
+    module.dynamodb.mcp_registry_table_name,
+    module.dynamodb.conversation_table_name,
+    module.dynamodb.workflow_state_table_name,
+    module.dynamodb.idempotency_table_name
   ]
   monthly_cost_alarm_usd = var.monthly_cost_alarm_usd
   alarm_actions = var.alarm_actions

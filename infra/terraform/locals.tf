@@ -35,12 +35,22 @@ locals {
     RESOURCE_OWNERSHIP_TABLE_NAME  = module.dynamodb.resource_ownership_table_name
     KILL_SWITCH_TABLE_NAME         = module.dynamodb.kill_switch_table_name
     MCP_REGISTRY_TABLE_NAME        = module.dynamodb.mcp_registry_table_name
+    CONVERSATION_TABLE_NAME        = module.dynamodb.conversation_table_name
+    CONVERSATION_TRANSCRIPT_BUCKET = aws_s3_bucket.conversation_transcripts.bucket
+    WORKFLOW_STATE_TABLE_NAME      = module.dynamodb.workflow_state_table_name
+    IDEMPOTENCY_TABLE_NAME         = module.dynamodb.idempotency_table_name
     AUDIT_ARCHIVE_BUCKET           = module.audit_archive.bucket_name
     REQUIRE_AGENT_ID               = tostring(var.require_agent_id)
     REQUIRE_RESOURCE_OWNERSHIP     = tostring(var.require_resource_ownership)
     ENABLE_REAL_BEDROCK        = tostring(var.enable_real_bedrock)
     CIRCUIT_BREAKER_THRESHOLD  = tostring(var.circuit_breaker_threshold)
     CIRCUIT_BREAKER_OPEN_SECONDS = tostring(var.circuit_breaker_open_seconds)
+    RECOVERY_STALE_SECONDS     = tostring(var.recovery_stale_seconds)
+    RECOVERY_LEASE_SECONDS     = tostring(var.recovery_lease_seconds)
+    RECOVERY_MAX_ATTEMPTS      = tostring(var.recovery_max_attempts)
+    RECOVERY_BACKOFF_SECONDS   = "60"
+    RECOVERY_MAX_BACKOFF_SECONDS = "3600"
+    RECOVERY_MAX_ITEMS         = tostring(var.recovery_max_items)
     METRICS_NAMESPACE          = local.metrics_namespace
   }
 
@@ -78,6 +88,7 @@ locals {
       module.approval_review.function_name,
       module.admin.function_name,
       module.request_router.function_name,
+      module.recovery_daemon.function_name,
     ],
     local.workflow_lambda_names
   )

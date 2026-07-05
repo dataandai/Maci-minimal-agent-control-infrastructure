@@ -32,6 +32,18 @@ Parameters:
   MonthlyCostAlarmUsd:
     Type: Number
     Default: 100
+  RecoveryScheduleExpression:
+    Type: String
+    Default: rate(5 minutes)
+    Description: EventBridge schedule for the recovery daemon.
+  RecoveryMaxItems:
+    Type: Number
+    Default: 25
+    Description: Maximum stale workflows the recovery daemon reconciles per run.
+  RecoveryStaleSeconds:
+    Type: Number
+    Default: 300
+    Description: Grace period before active workflows become eligible for recovery.
 
 Conditions:
   CreateAgentResources: !Equals [!Ref CreateBedrockAgent, 'true']
@@ -51,9 +63,19 @@ Globals:
         USAGE_TABLE_NAME: !Ref UsageTable
         CIRCUIT_BREAKER_TABLE_NAME: !Ref CircuitBreakerTable
         TICKET_TABLE_NAME: !Ref TicketTable
+        CONVERSATION_TABLE_NAME: !Ref ConversationTable
+        CONVERSATION_TRANSCRIPT_BUCKET: !Ref ConversationTranscriptBucket
+        WORKFLOW_STATE_TABLE_NAME: !Ref WorkflowStateTable
+        IDEMPOTENCY_TABLE_NAME: !Ref IdempotencyTable
         ENABLE_REAL_BEDROCK: !Ref EnableRealBedrock
         CIRCUIT_BREAKER_THRESHOLD: '3'
         CIRCUIT_BREAKER_OPEN_SECONDS: '300'
+        RECOVERY_STALE_SECONDS: !Ref RecoveryStaleSeconds
+        RECOVERY_LEASE_SECONDS: '120'
+        RECOVERY_MAX_ATTEMPTS: '3'
+        RECOVERY_BACKOFF_SECONDS: '60'
+        RECOVERY_MAX_BACKOFF_SECONDS: '3600'
+        RECOVERY_MAX_ITEMS: !Ref RecoveryMaxItems
         METRICS_NAMESPACE: !Sub '${EnvironmentName}/Maci'
 
 Resources:
@@ -140,6 +162,14 @@ Resources:
             TableName: !Ref CircuitBreakerTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TicketTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WorkflowStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IdempotencyTable
+        - S3CrudPolicy:
+            BucketName: !Ref ConversationTranscriptBucket
         - Statement:
             - Sid: StartGovernedWorkflow
               Effect: Allow
@@ -179,6 +209,35 @@ Resources:
             ApiId: !Ref AgentApi
             Path: /agent/invoke
             Method: POST
+
+
+  RecoveryDaemonFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src/
+      Handler: maci.recovery.lambda_handler
+      Description: Scheduled lease-based recovery daemon for stale governed agent workflows.
+      Timeout: 60
+      ReservedConcurrentExecutions: 1
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WorkflowStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IdempotencyTable
+        - S3CrudPolicy:
+            BucketName: !Ref ConversationTranscriptBucket
+      Events:
+        ScheduledRecovery:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref RecoveryScheduleExpression
+            Enabled: true
+            Input: !Sub '{"max_items": ${RecoveryMaxItems}}'
 
   CustomerLookupFunction:
     Type: AWS::Serverless::Function
@@ -465,6 +524,105 @@ Resources:
         - AttributeName: ticket_key
           KeyType: RANGE
 
+  ConversationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: record_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: record_key
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  WorkflowStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: workflow_id
+          AttributeType: S
+        - AttributeName: recovery_partition
+          AttributeType: S
+        - AttributeName: recovery_due_at_epoch
+          AttributeType: N
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: workflow_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: recovery_due_index
+          KeySchema:
+            - AttributeName: recovery_partition
+              KeyType: HASH
+            - AttributeName: recovery_due_at_epoch
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: tenant_id
+          AttributeType: S
+        - AttributeName: idempotency_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tenant_id
+          KeyType: HASH
+        - AttributeName: idempotency_key
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  ConversationTranscriptBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireDevConversationTranscripts
+            Status: Enabled
+            ExpirationInDays: 90
+
   ControlPlaneDashboard:
     Type: AWS::CloudWatch::Dashboard
     Properties:
@@ -495,6 +653,16 @@ Outputs:
     Value: !Ref CircuitBreakerTable
   TicketTableName:
     Value: !Ref TicketTable
+  ConversationTableName:
+    Value: !Ref ConversationTable
+  ConversationTranscriptBucketName:
+    Value: !Ref ConversationTranscriptBucket
+  WorkflowStateTableName:
+    Value: !Ref WorkflowStateTable
+  IdempotencyTableName:
+    Value: !Ref IdempotencyTable
+  RecoveryDaemonFunctionName:
+    Value: !Ref RecoveryDaemonFunction
   CustomerLookupFunctionArn:
     Description: Lambda ARN attached to the Bedrock Agent action group.
     Value: !GetAtt CustomerLookupFunction.Arn

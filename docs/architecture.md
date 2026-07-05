@@ -1,216 +1,390 @@
 # Architecture
 
+Maci is a deterministic control-plane foundation around probabilistic AI agent behavior.
+
+The platform does not try to make the LLM deterministic. Instead, it keeps model behavior inside deterministic software boundaries: identity, policy, resource ownership, schema validation, approval, audit, idempotency, and recovery.
+
+---
+
 ## Core principle
 
-The LLM is probabilistic. The platform boundary around it must be deterministic.
+> The LLM can reason and request actions.  
+> The system decides whether those actions are allowed.
 
-This architecture applies deterministic controls around Bedrock-based agent workflows:
+A PoC agent asks:
 
-- identity-derived tenant context;
-- first-class agent identities;
-- strict Pydantic v2 schemas;
-- tenant, tool, action and resource-level policy checks;
-- per-step guardrails;
-- tenant-scoped retrieval;
-- human approval for high-risk actions;
-- audit logs with event hashes and optional immutable archive;
-- usage/cost ledger;
-- tenant-scoped circuit breakers;
-- OTel-shaped traces and eval export.
+```text
+Can the model call the tool?
+```
+
+A production-style governed agent system asks:
+
+```text
+Can this authenticated user, in this tenant, through this agent,
+perform this action, on this resource, right now,
+under policy, with audit, cost tracking, idempotency, and recovery controls?
+```
+
+---
+
+## High-level architecture
+
+```text
+Client / Support Console
+        |
+        v
+API Gateway HTTP API + Cognito/JWT authorizer
+        |
+        v
+Request Router Lambda
+        |
+        +--> Policy Engine
+        +--> Guardrails
+        +--> ConversationStore
+        +--> WorkflowStateStore
+        +--> UsageLedger
+        +--> AuditLogger
+        +--> CircuitBreaker
+        |
+        +--> Amazon Bedrock Runtime / Converse
+        +--> Amazon Bedrock Agent Runtime / InvokeAgent
+        +--> Amazon Bedrock Knowledge Base gateway
+        +--> Step Functions workflow skeleton
+        |
+        v
+Tool Lambdas
+        +--> customer_lookup
+        +--> billing_check
+        +--> ticket_creation
+        +--> account_credit
+
+EventBridge Schedule
+        |
+        v
+Recovery Daemon Lambda
+        |
+        +--> workflow state scan through recovery_due_index
+        +--> conditional lease acquisition
+        +--> recovery classification
+        +--> retry/backoff or human escalation
+        +--> audit + non-user-visible conversation status
+```
+
+---
 
 ## Primary deployment path
 
-The full Maci system is deployed through Terraform under `infra/terraform`.
-
-The SAM template under `infra/template.yaml` is retained as a lightweight compatibility starter. It is useful for quick experiments, but it does not include the complete Maci hardening surface such as the agent registry table, approval queue, S3 audit archive, billing/account-credit tools and full Terraform observability module.
-
-## Request lifecycle
+The full Maci system is deployed through Terraform under:
 
 ```text
-1. API Gateway receives a request and validates JWT/OIDC identity.
-2. request_router Lambda derives tenant/user context from trusted authorizer claims.
-3. Request body is validated using strict Pydantic schemas.
-4. Optional body tenant/user echo fields are compared against trusted claims and rejected on mismatch.
-5. Tenant policy is loaded from the policy store.
-6. Policy engine checks model, task type, Knowledge Base, requested tools, token limit and budget.
-7. Guardrail checker evaluates user input before model/retrieval execution.
-8. Router optionally performs tenant-scoped retrieval and checks retrieved context.
-9. Router invokes direct Bedrock Converse, Bedrock Agent alias, or Step Functions workflow depending on task mode.
-10. Bedrock Agent tool Lambdas independently re-derive trusted tenant context from sessionAttributes.
-11. Every tool handler performs tool allowlist, agent identity, action and resource-level authorization.
-12. High-risk tools create/require human approval before execution.
-13. Outputs are validated and guardrail-checked before response.
-14. Audit, metrics, usage ledger and OTel-shaped trace events are emitted.
-15. Circuit breakers open on repeated safety/policy/budget failures.
+infra/terraform
 ```
 
-## Control-plane components
+Terraform includes the hardening resources that matter for this control-plane pattern:
+
+- Cognito/JWT/API boundary;
+- request router Lambda;
+- tool Lambdas;
+- DynamoDB state tables;
+- S3 audit/conversation archives;
+- EventBridge recovery daemon schedule;
+- observability resources;
+- IAM roles and Lambda environment wiring.
+
+The SAM template under `infra/template.yaml` is retained as a lightweight compatibility/dev starter. It is not the source of truth for the full production-hardening surface.
+
+---
+
+## Normal request lifecycle
+
+```text
+1. User logs in through Cognito/OIDC.
+2. API Gateway validates the JWT.
+3. Request Router derives tenant/user context from trusted claims.
+4. Request body is validated with strict Pydantic schemas.
+5. Optional body echo fields are compared against trusted claims and rejected on mismatch.
+6. Conversation is created or resumed.
+7. Workflow state is written.
+8. Tenant policy is loaded.
+9. Kill switch, circuit breaker and budget checks run.
+10. Input guardrail runs.
+11. LLM plans the next step.
+12. Tool request is produced.
+13. Tool handler re-derives trusted context from Bedrock sessionAttributes where applicable.
+14. Tool handler checks agent registry, tool allowlist, role, action and resource ownership.
+15. Read-only tools execute after authorization.
+16. Write tools use idempotency keys.
+17. High-risk tools create or require human approval.
+18. Assistant response is composed.
+19. Output validation and guardrail checks run.
+20. Conversation, audit, usage and trace records are written.
+21. Workflow state transitions to the next durable status.
+```
+
+---
+
+## Recovery lifecycle
+
+The Lambda runtime is stateless, but workflow state is not.
+
+A workflow that stalls because of timeout, crash, deploy interruption, throttling, or partial failure is reconstructed from durable stores.
+
+```text
+1. EventBridge invokes Recovery Daemon Lambda on a schedule.
+2. Daemon queries workflow records due for recovery through recovery_due_index.
+3. Daemon tries to claim each workflow using a conditional lease.
+4. If another daemon owns a valid lease, the record is skipped.
+5. Claimed workflow is classified by status.
+6. Safe states may request auto-resume.
+7. Write-adjacent states require idempotent resume.
+8. Approval-adjacent or ambiguous states escalate to human review.
+9. Retry/backoff is bounded by max attempts.
+10. Every recovery decision emits audit and non-user-visible conversation status.
+```
+
+The daemon does not directly execute high-risk business operations such as refund, account credit, permission escalation, or data deletion.
+
+---
+
+## Component responsibilities
+
+### API Gateway and Identity Provider
+
+Owns request entry and authentication.
+
+Responsibilities:
+
+- validate JWT/OIDC identity;
+- pass trusted claims to the router;
+- avoid trusting tenant identity from request body or prompt;
+- provide the root of tenant/user context.
 
 ### Request Router Lambda
 
-Owns the synchronous public request boundary:
+Owns the synchronous public request boundary.
 
-- validates input;
-- derives tenant context only from API Gateway authorizer claims;
-- rejects body tenant/user mismatches;
-- attaches request/trace context;
-- loads tenant policy;
-- performs deny-by-default policy checks;
-- performs guardrail checks at input/retrieval/output boundaries;
-- calls Bedrock Gateway, Bedrock Agent Runtime, or Step Functions;
-- records audit, metrics, usage ledger and trace events.
+Responsibilities:
+
+- build `TenantContext` from trusted identity;
+- validate request schema;
+- reject identity echo mismatches;
+- create/resume conversation;
+- transition workflow state;
+- load tenant policy;
+- enforce budget, kill switch and circuit breaker pre-checks;
+- run guardrails;
+- invoke Bedrock/agent gateway;
+- append assistant/user messages;
+- write audit, usage and trace records.
 
 ### Policy Engine
 
-The policy engine is deterministic Python. It decides:
+Determines whether a request should be allowed before reaching a model or tool.
 
-- whether a tenant may call a requested model;
-- whether a tenant may use a Knowledge Base;
-- whether a tenant may request tools;
-- whether requested token count fits policy;
-- whether estimated cost exceeds budget;
-- whether a request must be denied before reaching the model.
+Checks:
 
-### Per-operation Authorization
-
-Tool allowlisting is not enough. `authorization.py` checks the concrete operation and can call `resource_ownership.py` for explicit resource->tenant ownership:
-
-- tenant;
-- user/agent identity;
-- tool name;
-- resource action;
-- resource identifier;
-- risk level;
-- approval requirement.
-
-This is the defense-in-depth boundary used by every tool Lambda.
+- allowed models;
+- allowed tools;
+- allowed knowledge bases;
+- max tokens;
+- budget;
+- task type and workflow permissions.
 
 ### Agent Registry
 
-`agent_registry.py` models first-class agent identity:
+Models first-class agent identity.
+
+Tracks:
 
 - `agent_id`;
 - tenant binding;
 - human custodian;
-- active/suspended/revoked status;
+- active/suspended/revoked state;
 - allowed tools;
 - allowed actions.
 
-Production mode should set `require_agent_id=true` so action-group Lambdas fail closed when the agent identity is missing.
+Production mode should fail closed if agent identity is required but missing.
 
-### Bedrock Gateway
+### Tool Handlers
 
-A mockable boundary around Bedrock calls. In real deployment this wraps:
+Tool handlers are not simple functions that blindly execute model output.
 
-- Bedrock Runtime / Converse;
-- Bedrock Agent Runtime / InvokeAgent;
-- Bedrock Knowledge Base retrieval;
-- guardrail configuration;
-- usage token extraction;
-- trace/audit boundaries.
+Every tool handler must:
 
-### Lambda Tool Handlers
-
-Each tool has:
-
-- strict input schema;
-- strict output schema;
-- trusted tenant context from Bedrock Agent `sessionAttributes`;
-- no model-controlled tenant/user fields;
-- tenant tool allowlist check;
-- agent identity check;
-- resource/action authorization;
-- audit/metric emission.
+- use trusted tenant context;
+- validate strict schema;
+- reject model-controlled tenant/user fields;
+- check tenant tool policy;
+- check agent tool policy;
+- check resource ownership;
+- run guardrails over tool payloads where needed;
+- write audit and usage events;
+- enforce idempotency for write operations;
+- require approval for high-risk actions.
 
 Current tools:
 
-- `customer_lookup` — read customer status;
-- `ticket_creation` — create ticket with idempotency;
-- `billing_check` — read-only billing check;
-- `account_credit` — high-risk credit action requiring approval.
-
-### Human Approval Workflow
-
-High-risk actions use:
-
-- `approval.py` for approval records and store;
-- `approval_review.handler` for approve/reject decisions;
-- `account_credit` for pending/approved execution flow.
-
-The current implementation provides the code boundary and API handler. Production should enforce MFA or hardware-backed approval in the IdP for approver roles.
-
-### Deterministic Agent Graph
-
-`agent_graph.py` implements a lightweight deterministic graph runtime:
-
 ```text
-Orchestrator -> Planner -> Retrieval / Tool Agent -> Response Composer -> Validator -> Final Response
-                                      ^                   |
-                                      |                   v
-                                  self-correction      Circuit Breaker
+customer_lookup   read-only customer data lookup
+billing_check     read-only billing status check
+ticket_creation   write operation with idempotency
+account_credit    high-risk action requiring human approval
 ```
 
-This graph demonstrates stateful orchestration, strict output validation, self-correction attempts and safe-stop behavior. It is intentionally small and deterministic rather than a high-abstraction agent framework.
+### ConversationStore
 
-### Audit Store
+Stores user-facing conversation history separately from audit logs.
 
-The audit logger writes to DynamoDB when configured and falls back to stdout locally. Events include a hash for tamper-evident export. When `AUDIT_ARCHIVE_BUCKET` is configured, events can also be archived to S3 Object Lock-enabled storage.
+Responsibilities:
 
-### Observability
+- create/resume conversations;
+- append user messages;
+- append assistant messages;
+- append safe tool/result summaries;
+- append non-user-visible system status messages;
+- store searchable metadata in DynamoDB;
+- optionally archive transcript messages to S3.
 
-The system emits:
+See [`conversation-history.md`](conversation-history.md).
 
-- CloudWatch Embedded Metric Format metrics;
-- Lambda/API/Step Functions logs;
-- OTel-shaped JSON spans;
-- trace-to-eval case exports.
+### AuditLogger
 
-This is an intentionally lightweight OTel-compatible shape. A full OpenTelemetry SDK exporter can be added when selecting Langfuse, Phoenix, Braintrust, X-Ray/ADOT or another backend.
+Records security and business decisions.
+
+Examples:
+
+- identity bound;
+- policy allowed/denied;
+- tool requested;
+- tool allowed/denied;
+- resource ownership checked;
+- approval created/approved/rejected;
+- recovery action;
+- guardrail intervention;
+- circuit breaker opened.
+
+The audit system uses event hashing and a DynamoDB chain-head pattern for concurrency-aware tamper-evident ordering in DynamoDB-backed mode.
+
+### WorkflowStateStore
+
+Stores durable workflow state for recovery and restart behavior.
+
+Key fields:
+
+```text
+tenant_id
+conversation_id
+request_id
+workflow_id
+status
+pending_action
+approval_id
+idempotency_key
+recovery_due_at_epoch
+recovery_owner
+recovery_lease_until
+recovery_attempts
+last_recovery_at
+```
+
+See [`workflow-state-machine.md`](workflow-state-machine.md).
+
+### RecoveryDaemon
+
+Scheduled reconciliation worker.
+
+Responsibilities:
+
+- scan due workflows;
+- claim records with a durable lease;
+- classify recovery action;
+- schedule retry/backoff;
+- escalate ambiguous/high-risk states;
+- emit audit events;
+- append non-user-visible conversation recovery status.
+
+See [`recovery-daemon-operating-model.md`](recovery-daemon-operating-model.md).
+
+---
+
+## State stores
+
+| Store | Purpose | User-facing? | High-level retention |
+|---|---|---:|---|
+| Conversation metadata | List/resume conversations | Yes | Product policy |
+| Conversation transcript archive | Conversation history | Yes / support-facing | Product/privacy policy |
+| Audit table/archive | Security and business proof | No | Compliance/business policy |
+| Usage ledger | Cost/budget tracking | No | Billing/reporting policy |
+| Workflow state | Restart/recovery | No | Until terminal + retention |
+| Idempotency store | Prevent duplicate writes | No | Operation-specific TTL |
+| Approval table | High-risk action review | Partially | Business/compliance policy |
+| Circuit breaker table | Failure containment | No | Short TTL/stateful |
+| Resource ownership table | Tenant isolation | No | Business data lifecycle |
+
+---
 
 ## Fail-closed defaults
 
-The system denies requests when:
+The system should deny or stop when:
 
 - tenant context is missing;
-- body tenant/user echo mismatches trusted claims;
-- model is not explicitly allowlisted;
-- tool is not explicitly allowlisted;
-- agent identity is required but missing, suspended or revoked;
-- resource/action is not allowed;
-- high-risk action lacks approval;
-- Knowledge Base is not explicitly allowlisted;
-- request exceeds max token policy;
+- body tenant/user echo mismatches trusted identity;
+- model is not allowlisted;
+- tool is not allowlisted;
+- agent identity is required but missing/suspended/revoked;
+- resource ownership cannot be proven;
+- high-risk action lacks valid approval;
+- approval payload does not match exactly;
 - budget is exhausted;
+- kill switch is enabled;
+- circuit breaker is open;
 - guardrail intervenes;
-- schema validation fails repeatedly;
-- circuit breaker is open.
+- output validation repeatedly fails;
+- recovery state is ambiguous around a high-risk write.
 
-## Implemented vs. environment-specific
+---
 
-Implemented locally and covered by tests:
+## Implemented locally and covered by tests
 
 - strict schemas;
 - identity-derived routing;
 - body-vs-claim mismatch denial;
 - tenant policy checks;
-- Bedrock Gateway local invoke/retrieve/agent stubs;
-- tool handlers with sessionAttributes identity;
+- Bedrock gateway local invoke/retrieve/agent stubs;
+- tool handlers with trusted session context;
 - per-operation authorization;
+- resource ownership checks;
 - agent registry;
 - approval flow;
+- approval payload binding;
+- idempotent ticket creation;
+- generic operation idempotency;
+- conversation store foundation;
+- workflow state store;
+- recovery scanner/daemon;
+- lease-based recovery claims;
+- bounded retry/backoff;
+- recovery audit event;
 - hashed audit events and optional S3 archive sink;
-- deterministic guardrail checker;
+- guardrail checker;
 - OTel-shaped trace recorder;
 - deterministic graph safe-stop;
-- adversarial tests.
+- local adversarial/security tests.
 
-Requires AWS-account validation before production:
+---
 
-- Terraform `fmt`, `validate`, `plan`, `apply`;
-- concrete Knowledge Base and Bedrock Agent ARNs;
-- real Bedrock model access;
-- real backend integrations;
-- immutable audit retention/legal hold policy;
-- approval role MFA/hardware enforcement;
-- billing reconciliation with CUR/Cost Explorer;
-- load, chaos and red-team tests.
+## Requires AWS/account validation before production
+
+- Terraform `fmt`, `validate`, `plan`, `apply` in target account;
+- concrete Bedrock model access in target region;
+- concrete Knowledge Base IDs and filters;
+- real Bedrock Agent aliases/action groups if using Agent Runtime;
+- real CRM/ticketing/billing integrations;
+- IAM least privilege review;
+- CloudWatch/OTel backend selection;
+- S3 Object Lock and retention policy review;
+- KMS key ownership and rotation decisions;
+- load tests;
+- chaos/recovery tests;
+- prompt-injection/adversarial red-team tests;
+- compliance/privacy/legal review.

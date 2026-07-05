@@ -1,91 +1,194 @@
-# Terraform deployment guide
+# Terraform Deployment
 
-The repository now contains a Terraform multi-environment deployment under `infra/terraform`.
-Use this path when you want a long-lived AWS product environment rather than a quick SAM demo.
+Terraform is the primary deployment path for the full Maci system.
 
-## Stack layout
+The SAM template is retained for lightweight/dev compatibility, but Terraform is the source of truth for the complete hardening surface.
+
+---
+
+## What Terraform deploys
+
+Depending on variables, the Terraform stack includes:
 
 ```text
-infra/terraform/
-  main.tf
-  variables.tf
-  outputs.tf
-  environments/
-    dev/terraform.tfvars
-    staging/terraform.tfvars
-    prod/terraform.tfvars
-  modules/
-    api/
-    auth/
-    audit_archive/
-    dynamodb/
-    lambda_function/
-    observability/
-    stepfunctions/
-  state-backend/
+API Gateway / HTTP API
+Cognito/JWT authorizer resources
+Request Router Lambda
+Tool Lambdas
+Approval handler Lambda
+Recovery Daemon Lambda
+EventBridge recovery schedule
+DynamoDB tables
+S3 audit archive bucket
+S3 conversation transcript bucket
+CloudWatch logs/metrics/dashboard resources
+Step Functions workflow skeleton
+IAM roles and policies
 ```
 
-## Recommended deployment order
+State tables include patterns for:
 
-1. Deploy `state-backend` once if you want remote state.
-2. Deploy `dev` with `enable_real_bedrock=false`.
-3. Seed demo tenant policies.
-4. Create a Cognito demo user and run the API smoke test.
-5. Enable real Bedrock only after model access is confirmed in the selected region.
-6. Add concrete Knowledge Base ARNs and alarm actions before staging/prod.
-
-## Why Terraform does not create the Bedrock Agent by default
-
-The control-plane API, tools, policies, approval workflow, audit archive and observability are Terraform-managed. Bedrock Agent creation remains an integration step by default because regional/provider support can vary and many teams create agents manually or through a separate platform pipeline. The router can invoke an existing agent alias when these variables are set:
-
-```hcl
-enable_bedrock_agent = true
-bedrock_agent_id = "..."
-bedrock_agent_alias_id = "..."
-allowed_bedrock_agent_alias_arns = ["arn:aws:bedrock:..."]
+```text
+policy
+audit
+usage
+circuit breaker
+ticket idempotency
+generic idempotency
+workflow state
+conversation metadata/messages
+agent registry
+approval
+resource ownership
+kill switch
+MCP registry
 ```
 
-The tool Lambdas expose outputs that can be attached to Bedrock Agent action groups.
+---
 
-## Dev command sequence
+## Basic commands
 
 ```bash
 cd infra/terraform
 terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan -var-file=environments/dev/terraform.tfvars
 terraform apply -var-file=environments/dev/terraform.tfvars
-
-POLICY_TABLE=$(terraform output -raw policy_table_name)
-python ../../scripts/seed_demo_policies.py --table "$POLICY_TABLE" --region eu-west-1
 ```
 
-## Production checklist before `prod` apply
+For CI validation without a backend:
 
-- `enable_real_bedrock=true` only after Bedrock model access is enabled.
-- `allowed_knowledge_base_arns` contains concrete ARNs.
-- `cors_allowed_origins` is not `*`.
-- `alarm_actions` contains notification targets.
-- Remote state backend is configured.
-- WAF/custom domain are planned if internet-facing.
-- `require_agent_id=true` for production tool execution.
-- S3 Object Lock retention/legal hold policy reviewed.
-- Approval reviewer roles are protected by MFA or hardware-backed IdP policy.
-- Bedrock Agent alias ARNs are concrete if agent mode is enabled.
-
-
-## Production hardening variables
-
-For staging/prod, set these explicitly before applying:
-
-```hcl
-require_agent_id = true
-require_resource_ownership = true
-allow_dev_knowledge_base_wildcard = false
-allowed_knowledge_base_arns = [
-  "arn:aws:bedrock:<region>:<account>:knowledge-base/<tenant-kb-id>"
-]
-allowed_bedrock_agent_source_arns = [
-  "arn:aws:bedrock:<region>:<account>:agent/<agent-id>"
-]
+```bash
+terraform -chdir=infra/terraform init -backend=false
+terraform -chdir=infra/terraform validate
 ```
 
-Without `allowed_bedrock_agent_source_arns`, Terraform intentionally creates no Bedrock service-principal invoke permission for action-group Lambdas. This avoids the earlier `agent/*` wildcard pattern.
+---
+
+## Before running apply
+
+Check:
+
+```bash
+aws sts get-caller-identity
+aws configure get region
+```
+
+Confirm:
+
+```text
+correct AWS account
+correct AWS region
+correct Terraform workspace/state
+Bedrock model access strategy
+S3 bucket naming
+Object Lock/retention intent
+```
+
+---
+
+## Plan review checklist
+
+Review the plan for:
+
+```text
+DynamoDB table creation/replacement
+S3 bucket creation/replacement
+Object Lock changes
+KMS/encryption changes
+IAM wildcard actions/resources
+API authorizer changes
+Lambda environment variables
+EventBridge recovery schedule
+workflow state GSI
+CloudWatch log retention
+```
+
+Stop if Terraform wants to destroy shared or protected data stores unexpectedly.
+
+---
+
+## Required post-apply checks
+
+After apply:
+
+```bash
+terraform output
+```
+
+Then verify:
+
+```text
+API endpoint exists
+Cognito/JWT auth configured
+DynamoDB tables exist
+workflow state table has recovery_due_index
+conversation table exists
+transcript bucket exists if enabled
+audit archive bucket exists if enabled
+Recovery Daemon Lambda exists
+EventBridge schedule enabled
+CloudWatch log groups exist
+```
+
+---
+
+## Smoke tests
+
+Run smoke tests for:
+
+```text
+normal authenticated request
+trusted tenant context creation
+cross-tenant denial
+customer_lookup for owned customer
+billing_check read-only path
+ticket_creation idempotency
+account_credit pending approval
+approval replay denial
+conversation message persistence
+workflow state persistence
+recovery daemon invocation
+```
+
+---
+
+## Common Terraform/AWS pitfalls
+
+```text
+wrong AWS profile
+wrong region
+Bedrock model unavailable in region
+S3 bucket name already taken
+Object Lock blocks destroy
+DynamoDB table already exists
+GSI replacement risk
+Lambda package path missing
+IAM permissions too weak
+IAM permissions too broad
+CloudWatch retention omitted
+```
+
+See also: [`aws-deployment-guide-for-junior-engineers.md`](aws-deployment-guide-for-junior-engineers.md)
+
+---
+
+## Destroy warning
+
+For dev/lab only:
+
+```bash
+terraform destroy -var-file=environments/dev/terraform.tfvars
+```
+
+Before destroy, check:
+
+```text
+S3 Object Lock retention
+non-empty transcript/audit buckets
+DynamoDB data you need
+correct account/region/environment
+```
+
+Do not use destroy as a production rollback strategy.

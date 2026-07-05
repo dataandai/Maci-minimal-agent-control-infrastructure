@@ -1,40 +1,216 @@
-# Security hardening implementation notes
+# Security Hardening
 
-This release moves the project from a deployable Bedrock/Lambda lab toward a real agent security control plane. It implements the key missing code paths called out in the 2026 production-ready agent checklist.
+This document summarizes the security-hardening controls implemented in Maci.
 
-## Implemented control-plane capabilities
+---
 
-| Best-practice requirement | Maci implementation |
-|---|---|
-| First-class agent identity | `agent_registry.py` introduces `AgentIdentity`, status, human custodian, allowed tools/actions, and optional DynamoDB backing via `AGENT_REGISTRY_TABLE_NAME`. |
-| Trusted identity only | API requests still derive tenant/user from Cognito/JWT; Bedrock tools still derive identity from `sessionAttributes`; tool schemas reject model-generated identity fields. |
-| Runtime authorization per operation | `authorization.py` checks the exact tenant + tool + action + resource combination. `resource_ownership.py` can verify concrete resource ownership via DynamoDB and fail closed in staging/prod. |
-| Agent-level least privilege | `tool_security.py` now combines tenant tool allowlist, agent allowlist, active/revoked agent status, and action-level checks. |
-| Human approval for high-risk actions | `account_credit` tool creates pending approval records; `approval_review` API handler approves/rejects them using trusted human JWT roles. |
-| Durable approval state | `approval.py` persists approvals in DynamoDB when `APPROVAL_TABLE_NAME` is set. Approval IDs are deterministic and approvals are bound to an exact payload hash to prevent approval replay with changed amounts/reasons. |
-| Tamper-evident audit direction | `audit.py` writes audit records to DynamoDB and optionally archives hashed events to S3. Terraform adds an Object Lock enabled audit archive bucket. |
-| Per-step guardrails | `guardrails.py` adds a deterministic local guardrail checker and real Bedrock guardrail boundary hook. The router checks user input, retrieved context, and model output. |
-| OTel-style agent tracing | `observability.py` emits OpenTelemetry-shaped JSON spans and supports trace-to-eval-case export. |
-| Deterministic agent graph runtime | `agent_graph.py` implements a structured state graph with planner/retrieval/tool/composer/validator nodes, Pydantic v2 strict validation, self-correction attempts, and safe-stop circuit breaker behavior. |
-| Adversarial tests | `tests/test_hardening_security.py` covers resource-level denial, agent identity restrictions, human approval, guardrail intervention, tracing, and graph safe-stop behavior. |
+## Security principle
 
-## New tool surfaces
+The model is not the security boundary.
 
-- `billing_check`: read-only billing status lookup.
-- `account_credit`: high-risk financial action requiring human approval.
-- `approval_review`: API Gateway/Lambda compatible approval decision endpoint.
+Security decisions must be enforced by deterministic system components.
 
-## Remaining external validation
+---
 
-The code paths are implemented and unit-tested locally, but these still require validation in a real AWS account:
+## Identity hardening
 
-1. `terraform fmt`, `terraform validate`, and `terraform plan` against the target account.
-2. S3 Object Lock behavior and retention mode on the audit archive bucket.
-3. Bedrock model access and optional real guardrail API behavior.
-4. Bedrock Agent action group wiring with real Agent IDs/Aliases.
-5. IAM review for production ARNs, especially Knowledge Base and Bedrock Agent source ARNs.
-6. End-to-end CloudWatch alarms and approval flow smoke tests.
+Implemented controls:
 
-## Security posture statement
+```text
+trusted tenant context from JWT/OIDC/API Gateway claims
+trusted Bedrock Agent tool context from sessionAttributes
+body tenant/user echo mismatch denial
+model/tool tenant_id not trusted
+missing tenant context fails closed
+```
 
-This repository now implements the main local control-plane protections needed for a serious governed agent system. It should still be promoted through dev -> staging -> production with real AWS integration tests, IAM review, and red-team test cases before handling customer production data.
+Risk addressed:
+
+```text
+tenant impersonation
+model-generated tenant override
+body-parameter identity spoofing
+```
+
+---
+
+## Schema hardening
+
+Implemented controls:
+
+```text
+Pydantic v2 strict models
+extra fields forbidden
+strict tool input/output schemas
+validation failure events
+safe-stop behavior after repeated invalid outputs
+```
+
+Risk addressed:
+
+```text
+model invents unexpected fields
+model injects tenant_id into tool payload
+malformed tool call reaches backend
+```
+
+---
+
+## Authorization hardening
+
+Implemented controls:
+
+```text
+tenant policy engine
+agent registry
+agent active/suspended/revoked status
+allowed tools per agent/tenant
+per-operation authorization
+resource ownership checks
+high-risk approval requirement
+```
+
+Risk addressed:
+
+```text
+agent calls unauthorized tool
+support role performs billing write
+cross-tenant customer access
+high-risk action without approval
+```
+
+---
+
+## Guardrail hardening
+
+Implemented boundaries:
+
+```text
+input guardrail
+retrieved context guardrail
+tool payload guardrail
+model output guardrail
+```
+
+Risk addressed:
+
+```text
+prompt injection
+tenant bypass attempts
+policy bypass instructions
+retrieved-document injection
+unsafe final response
+```
+
+---
+
+## Business action hardening
+
+Implemented controls:
+
+```text
+ticket_creation idempotency
+account_credit pending approval
+approval payload hash binding
+approval replay denial
+generic operation idempotency store
+```
+
+Risk addressed:
+
+```text
+duplicate ticket creation
+duplicate credit execution
+approval reused for different amount/customer
+financial action executed by model alone
+```
+
+---
+
+## Runtime safety hardening
+
+Implemented controls:
+
+```text
+circuit breaker
+global/tenant/agent/tool kill switches
+usage ledger and budget checks
+recovery daemon with lease and bounded retry
+human escalation for ambiguous/high-risk states
+```
+
+Risk addressed:
+
+```text
+runaway retries
+repeated validation failures
+unsafe tool behavior
+partial workflow failure
+crash/retry duplicate writes
+```
+
+---
+
+## Audit and trace hardening
+
+Implemented controls:
+
+```text
+allow and deny audit events
+hash-based audit events
+DynamoDB chain-head concurrency hardening
+optional S3 Object Lock archive
+OTel-shaped traces
+usage/cost ledger
+recovery audit events
+```
+
+Risk addressed:
+
+```text
+cannot prove why action was allowed/denied
+lost deny events
+concurrent audit chain forks
+missing recovery accountability
+```
+
+---
+
+## Conversation safety hardening
+
+Implemented controls:
+
+```text
+ConversationStore separate from audit
+user/assistant/system-status message types
+non-user-visible system status for recovery
+redaction_status field
+no hidden chain-of-thought storage requirement
+```
+
+Still needed for production:
+
+```text
+read API authorization
+redaction pipeline
+retention enforcement
+export/delete workflow
+legal hold process
+```
+
+---
+
+## Remaining hardening work
+
+Before production:
+
+```text
+run IAM least-privilege review
+run Terraform plan/apply in target account
+configure Bedrock model/guardrail/KBS access
+wire real backend credentials through approved secret manager
+run load tests
+run red-team prompt-injection tests
+run chaos/recovery tests
+review privacy/retention policy
+```

@@ -1,26 +1,59 @@
 # AWS First Deploy Lab
 
-This lab is designed for people who want to deploy the project into their own AWS account from a Linux terminal. It is intentionally beginner-friendly: start in safe dev mode, deploy with Terraform, seed a demo tenant, create a Cognito user, get a JWT, and run the first API smoke test.
+This lab helps you deploy the Maci dev stack into your own AWS account.
 
-The first deploy uses:
+It is intended for learning and validation, not production.
 
-- `enable_real_bedrock=false`
-- `enable_bedrock_agent=false`
+---
 
-That means the control plane deploys without requiring Bedrock model access on day one. You validate the AWS foundation first: Cognito, API Gateway, Lambda, DynamoDB, Step Functions, CloudWatch, tenant identity, policy enforcement, audit, usage and circuit-breaker tables.
+## What you will prove
 
-## What you need before starting
+A useful first deploy should prove:
 
-On Linux, you need:
+```text
+Terraform can deploy the dev stack
+API endpoint is reachable
+authentication works
+trusted tenant context is created
+conversation state can be written
+workflow state can be written
+tool calls can be authorized/denied
+audit and usage events are written
+recovery daemon exists and can be invoked
+```
 
-- AWS CLI configured with an AWS account
-- Terraform 1.6+
-- Python 3.12
-- `curl` and `unzip`
+---
 
-You also need AWS permissions to create IAM roles, Lambda functions, API Gateway, Cognito, DynamoDB, Step Functions and CloudWatch resources.
+## Prerequisites
 
-## One-command guided deploy
+Install:
+
+```text
+Python 3.11+
+git
+AWS CLI v2
+Terraform CLI
+```
+
+Check:
+
+```bash
+python --version
+git --version
+aws --version
+terraform version
+```
+
+Authenticate:
+
+```bash
+aws sso login --profile <profile>
+aws sts get-caller-identity --profile <profile>
+```
+
+---
+
+## Recommended quickstart
 
 From the repository root:
 
@@ -28,146 +61,94 @@ From the repository root:
 ./quickstart/linux/dev_first_deploy.sh
 ```
 
-This runs the full dev flow:
+This script chains the individual lab steps.
 
-```text
-00_check_prereqs.sh
-01_prepare_local_python.sh
-02_terraform_plan_dev.sh
-03_terraform_apply_dev.sh
-04_seed_demo_data_and_user.sh
-05_get_token.sh
-06_smoke_test_api.sh
-```
+---
 
-The script asks for confirmation before deploying because AWS resources may create costs.
-
-For non-interactive CI/lab use:
-
-```bash
-AUTO_APPROVE=true ./quickstart/linux/dev_first_deploy.sh
-```
-
-## Step-by-step deploy
-
-Use this mode if you are learning AWS/Terraform and want to inspect each step.
+## Step-by-step flow
 
 ```bash
 ./quickstart/linux/00_check_prereqs.sh
-```
-
-Checks the Linux machine, AWS credentials, Terraform, Python 3.12 and repo paths.
-
-```bash
 ./quickstart/linux/01_prepare_local_python.sh
-```
-
-Creates `.venv`, installs Python dependencies and runs tests.
-
-```bash
 ./quickstart/linux/02_terraform_plan_dev.sh
-```
-
-Runs `terraform init`, `terraform fmt`, `terraform validate`, and creates a saved dev plan.
-
-```bash
 ./quickstart/linux/03_terraform_apply_dev.sh
-```
-
-Applies the saved plan and stores Terraform outputs under `.quickstart/terraform-outputs-dev.json`.
-
-```bash
 ./quickstart/linux/04_seed_demo_data_and_user.sh
-```
-
-Seeds demo tenant policies and creates/updates a Cognito demo user.
-
-```bash
 ./quickstart/linux/05_get_token.sh
-```
-
-Gets a Cognito ID token and stores it under `.quickstart/id-token.txt`.
-
-```bash
 ./quickstart/linux/06_smoke_test_api.sh
 ```
 
-Calls the deployed API Gateway endpoint with the JWT token.
-
-## Demo tenant and user
-
-The default quickstart values are:
-
-```text
-Tenant:   tenant-acme
-Username: demo@example.com
-Email:    demo@example.com
-Region:   eu-west-1
-```
-
-The generated demo password is saved locally in:
-
-```text
-.quickstart/dev-user.env
-```
-
-This file is chmod `600` and is ignored by Git. Do not commit it.
-
-To override defaults:
-
-```bash
-AWS_REGION=eu-west-1 \
-DEMO_USERNAME=student@example.com \
-DEMO_EMAIL=student@example.com \
-DEMO_TENANT_ID=tenant-acme \
-./quickstart/linux/dev_first_deploy.sh
-```
-
-## Destroy the dev stack
-
-When you are done:
+Destroy when done:
 
 ```bash
 ./quickstart/linux/99_destroy_dev.sh
 ```
 
-You must type `destroy` to confirm.
+---
 
-## Turning on real Bedrock later
-
-Do this only after the basic dev stack works.
-
-Edit:
-
-```text
-infra/terraform/environments/dev/terraform.tfvars
-```
-
-Change:
-
-```hcl
-enable_real_bedrock = true
-```
-
-Then run:
+## Local validation before AWS
 
 ```bash
-./quickstart/linux/02_terraform_plan_dev.sh
-./quickstart/linux/03_terraform_apply_dev.sh
-./quickstart/linux/05_get_token.sh
-./quickstart/linux/06_smoke_test_api.sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev,aws]'
+python -m compileall -q src tests
+pytest -q
 ```
 
-Before enabling real Bedrock, confirm the selected model is enabled in your AWS account and region.
+Do not deploy broken local code to AWS.
 
-## Why this lab exists
+---
 
-The project is not just a code sample. It is an AWS learning path for production-style GenAI systems:
+## First smoke test expectations
 
-1. Identity is derived from Cognito/JWT, not user input.
-2. Tenant policy lives in DynamoDB.
-3. The LLM cannot invent `tenant_id` for tools.
-4. Usage and audit are persisted.
-5. The system can be destroyed cleanly after the lab.
+A normal support request should:
 
-This makes the repo approachable for students while still teaching the correct production boundary: probabilistic AI behind deterministic software controls.
+```text
+authenticate user
+create trusted tenant context
+create/resume conversation
+write workflow state
+run policy and guardrail checks
+allow owned customer lookup
+deny cross-tenant customer lookup
+create ticket with idempotency
+create pending approval for account_credit
+audit decisions
+write usage event
+```
+
+---
+
+## Recovery smoke test
+
+Create or simulate a stale workflow record due for recovery.
+
+Then invoke the recovery daemon with a small limit.
+
+Expected:
+
+```text
+daemon claims workflow with lease
+classifies resume policy
+writes recovery audit event
+writes non-user-visible conversation status if configured
+releases for retry or escalates to human review
+```
+
+---
+
+## Common beginner pitfalls
+
+```text
+wrong AWS account
+wrong region
+Bedrock model access missing
+installing only .[dev] instead of .[dev,aws]
+missing seed data
+missing resource ownership records
+S3 Object Lock prevents destroy
+Terraform validate passes but apply fails
+IAM too broad after quick fix
+```
+
+Detailed pitfalls: [`aws-deployment-guide-for-junior-engineers.md`](aws-deployment-guide-for-junior-engineers.md)

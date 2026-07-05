@@ -40,6 +40,12 @@ class PolicyEngine:
             raise ValueError("request tenant_id does not match authenticated tenant claim")
         if request.user_id is not None and request.user_id != tenant_context.user_id:
             raise ValueError("request user_id does not match authenticated subject claim")
+        if (
+            request.conversation_id is not None
+            and tenant_context.conversation_id is not None
+            and request.conversation_id != tenant_context.conversation_id
+        ):
+            raise ValueError("request conversation_id does not match authenticated conversation claim")
 
         return GovernedRequest(
             tenant_context=tenant_context,
@@ -49,6 +55,7 @@ class PolicyEngine:
             requested_knowledge_base_id=request.requested_knowledge_base_id,
             requested_tools=request.requested_tools,
             max_output_tokens=request.max_output_tokens,
+            conversation_id=request.conversation_id,
         )
 
     def evaluate(self, request: GovernedRequest, policy: TenantPolicy) -> PolicyDecisionRecord:

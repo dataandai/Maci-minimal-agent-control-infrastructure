@@ -6,18 +6,22 @@ from typing import Any
 from pydantic import ValidationError
 
 from ...audit import AuditEvent, AuditEventType, AuditLogger
+from ...conversation import ConversationStore
 from ...authorization import AuthorizationError, ResourceAuthorizer
 from ...bedrock_agent_event import BedrockAgentEventError, extract_model_parameters
 from ...bedrock_agent_response import bedrock_function_response
 from ...identity import MissingIdentityError, tenant_context_from_bedrock_agent_event
 from ...guardrails import GuardrailChecker, GuardrailIntervention
 from ...metrics import emit_metric
+from ...recovery import WorkflowStateStore, WorkflowStatus
 from ...schemas import BillingCheckInput, BillingCheckOutput, ResourceAction, RiskLevel, ToolName
 from ...tool_security import ToolSecurityError, enforce_tool_allowed
 
 _audit = AuditLogger()
 _authorizer = ResourceAuthorizer()
 _guardrails = GuardrailChecker()
+_conversation_store = ConversationStore()
+_workflow_state_store = WorkflowStateStore()
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -56,6 +60,22 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         outstanding_balance_usd=0.0,
         last_invoice_id="inv-demo-001",
     )
+    _workflow_state_store.transition(
+        tenant_context,
+        conversation_id=_conversation_id(tenant_context),
+        status=WorkflowStatus.BILLING_CHECK_DONE,
+        metadata={"tool": ToolName.BILLING_CHECK.value, "customer_id": request.customer_id, "account_status": result.account_status},
+    )
+    _conversation_store.append_tool_result_summary(
+        tenant_context,
+        _conversation_id(tenant_context),
+        ToolName.BILLING_CHECK.value,
+        {"customer_id": request.customer_id, "account_status": result.account_status, "outstanding_balance_usd": result.outstanding_balance_usd},
+    )
     _audit.emit(AuditEvent(request_id=tenant_context.request_id, tenant_id=tenant_context.tenant_id, event_type=AuditEventType.TOOL_INVOKED, message="billing_check invoked", attributes={"customer_id": request.customer_id}))
     emit_metric("ToolInvoked", 1, dimensions={"tenant_id": tenant_context.tenant_id, "tool": ToolName.BILLING_CHECK.value})
     return bedrock_function_response(event, 200, result.model_dump(mode="json"))
+
+
+def _conversation_id(tenant_context):
+    return tenant_context.conversation_id or f"conv-{tenant_context.request_id}"

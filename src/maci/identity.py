@@ -49,6 +49,7 @@ def tenant_context_from_api_gateway_event(event: dict[str, Any]) -> TenantContex
         user_id=user_id,
         roles=_roles_from_claims(merged_claims),
         agent_id=_first_present(merged_claims, ("agent_id", "custom:agent_id")),
+        conversation_id=_first_present(merged_claims, ("conversation_id", "custom:conversation_id")),
     )
 
 
@@ -76,6 +77,7 @@ def tenant_context_from_bedrock_agent_event(event: dict[str, Any]) -> TenantCont
         roles=_roles_from_claims(merged),
         request_id=merged.get("request_id") or str(uuid4()),
         agent_id=_first_present(merged, ("agent_id", "custom:agent_id")) or agent.get("id") or event.get("agentId"),
+        conversation_id=_first_present(merged, ("conversation_id", "custom:conversation_id")),
     )
 
 

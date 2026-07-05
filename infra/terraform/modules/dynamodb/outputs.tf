@@ -27,3 +27,12 @@ output "kill_switch_table_arn" { value = aws_dynamodb_table.kill_switch.arn }
 
 output "mcp_registry_table_name" { value = aws_dynamodb_table.mcp_registry.name }
 output "mcp_registry_table_arn" { value = aws_dynamodb_table.mcp_registry.arn }
+
+output "conversation_table_name" { value = aws_dynamodb_table.conversation.name }
+output "conversation_table_arn" { value = aws_dynamodb_table.conversation.arn }
+
+output "workflow_state_table_name" { value = aws_dynamodb_table.workflow_state.name }
+output "workflow_state_table_arn" { value = aws_dynamodb_table.workflow_state.arn }
+
+output "idempotency_table_name" { value = aws_dynamodb_table.idempotency.name }
+output "idempotency_table_arn" { value = aws_dynamodb_table.idempotency.arn }
