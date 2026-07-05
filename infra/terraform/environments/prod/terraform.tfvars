@@ -43,4 +43,6 @@ enable_pii_redaction       = true
 pii_redaction_salt         = "maci-redaction-v1"
 
 # Test-only live red-team RAG/tool-output override plumbing. Keep false in production.
+redteam_override_roles = ["redteam-operator"]
+
 enable_redteam_overrides = false

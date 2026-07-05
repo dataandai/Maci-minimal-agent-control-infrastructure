@@ -98,8 +98,10 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         body = event.get("body") or "{}"
         payload = json.loads(body) if isinstance(body, str) else body
         request = AgentRequest.model_validate(payload)
-        if _has_redteam_override(request) and not _redteam_overrides_enabled():
-            return _response(400, {"error": "redteam_overrides_disabled", "details": "redteam override fields are test-only and require ENABLE_REDTEAM_OVERRIDES=true"})
+        if _has_redteam_override(request):
+            redteam_override_error = _redteam_override_error(tenant_context.roles)
+            if redteam_override_error is not None:
+                return _response(403 if redteam_override_error == "redteam_role_required" else 400, {"error": redteam_override_error})
         governed_request = policy_engine.bind_request(request, tenant_context)
         conversation = conversation_store.start_or_resume(tenant_context, conversation_id=request.conversation_id)
         tenant_context = tenant_context.model_copy(update={"conversation_id": conversation.conversation_id})
@@ -406,8 +408,37 @@ def _has_redteam_override(request: AgentRequest) -> bool:
     return request.redteam_context_override is not None or request.redteam_tool_output_override is not None
 
 
+def _redteam_override_error(roles: tuple[str, ...]) -> str | None:
+    """Return a machine-readable error if test-only red-team overrides are unavailable.
+
+    These override fields deliberately bypass normal retrieval/tool-output sources
+    so a live endpoint can test poisoned RAG and malicious tool-output channels.
+    They must be protected by two gates:
+
+    1. environment gate: enabled only in dev/staging deployments;
+    2. caller role gate: available only to a dedicated red-team operator role.
+
+    Production should set ENABLE_REDTEAM_OVERRIDES=false. Even in staging, a
+    normal authenticated support user must not be able to inject retrieved
+    context or tool output directly into the request flow.
+    """
+
+    if not _redteam_overrides_enabled():
+        return "redteam_overrides_disabled"
+    allowed_roles = _redteam_override_roles()
+    caller_roles = {role.strip().lower() for role in roles if role.strip()}
+    if not caller_roles.intersection(allowed_roles):
+        return "redteam_role_required"
+    return None
+
+
 def _redteam_overrides_enabled() -> bool:
     return os.getenv("ENABLE_REDTEAM_OVERRIDES", "false").lower() in {"1", "true", "yes", "on"}
+
+
+def _redteam_override_roles() -> set[str]:
+    raw = os.getenv("REDTEAM_OVERRIDE_ROLES", "redteam-operator,admin")
+    return {role.strip().lower() for role in raw.replace(";", ",").replace(" ", ",").split(",") if role.strip()}
 
 def _start_sync_workflow(state_machine_arn: str, workflow_request: WorkflowInvocationRequest) -> dict[str, Any]:
     try:

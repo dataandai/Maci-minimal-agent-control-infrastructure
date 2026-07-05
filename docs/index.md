@@ -99,3 +99,5 @@ For a reviewer/interviewer:
 - [Code Audit v0.2.2](code-audit-v0.2.2.md)
 
 - [`docs/code-audit-v0.2.4.md`](code-audit-v0.2.4.md) — redaction metric preservation and live red-team integration fixes.
+
+- [Code Audit v0.2.5](code-audit-v0.2.5.md) — CI gates and red-team override authorization.

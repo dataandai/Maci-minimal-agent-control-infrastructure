@@ -358,7 +358,7 @@ class LiveEndpointRedTeamRunner:
         )
         expected_blocked = case.expected_action == "intervene"
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310 - controlled URL from operator config
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # nosec B310 - controlled dev/staging URL from operator config
                 status = int(response.status)
                 text = response.read(4096).decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:

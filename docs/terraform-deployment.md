@@ -200,6 +200,7 @@ The v0.2.4 live red-team harness can test poisoned retrieved context and malicio
 
 ```hcl
 enable_redteam_overrides = true
+redteam_override_roles = ["redteam-operator"]
 ```
 
 Use this only in dev/staging with test tenants and non-production data. Production should keep:

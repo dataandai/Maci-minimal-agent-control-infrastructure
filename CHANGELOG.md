@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.5 - CI Gates and Red-Team Override Authorization
+
+- Added role-gated authorization for live red-team override fields: `ENABLE_REDTEAM_OVERRIDES=true` is no longer sufficient by itself.
+- Added `REDTEAM_OVERRIDE_ROLES`, defaulting to `redteam-operator`, with dev allowing `redteam-operator,admin`, staging allowing `redteam-operator`, and prod keeping overrides disabled.
+- Added router regression coverage proving normal support users cannot inject `redteam_context_override` or `redteam_tool_output_override` even when the environment flag is enabled.
+- Updated live red-team scoring expectations so `redteam_role_required` is not counted as a successful guardrail block.
+- Hardened CI: removed permanent `|| true` from `mypy` and `bandit`, added `pip-audit`, and set Checkov `soft_fail: false`.
+- Added an explicit local Bandit exception for the operator-configured dev/staging live red-team HTTP call instead of soft-failing the whole scan.
+- Fixed `scripts/export_public_redteam_dataset.py` syntax so script compilation succeeds.
+- Expanded local validation from 81 to 82 tests.
+
 ## v0.2.4 - Redaction Metrics and Live Red-Team Integration Fixes
 
 - Fixed redaction false positives where numeric `input_tokens`, `output_tokens`, and related token-count metrics were redacted as secrets.

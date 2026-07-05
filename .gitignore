@@ -1,14 +1,2 @@
-.venv/
-__pycache__/
-.pytest_cache/
-*.pyc
-*.zip
-.aws-sam/
-.env
-.terraform/
-.terraform.lock.hcl
-infra/terraform/.terraform-build/
-infra/terraform/environments/*/backend.hcl
-terraform.tfstate
-terraform.tfstate.backup
-*.tfplan
+# Created by pytest automatically.
+*

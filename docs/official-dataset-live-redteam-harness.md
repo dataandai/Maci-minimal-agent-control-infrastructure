@@ -257,9 +257,10 @@ For Terraform dev/staging deployments, enable the test-only override plumbing ex
 
 ```hcl
 enable_redteam_overrides = true
+redteam_override_roles = ["redteam-operator"]
 ```
 
-Production must keep it disabled:
+The caller JWT must include one of the configured roles. Production must keep the override disabled:
 
 ```hcl
 enable_redteam_overrides = false
@@ -284,13 +285,16 @@ redteam_context_override
 redteam_tool_output_override
 ```
 
-The real `AgentRequest` schema accepts these fields, but the request router only honors them when the deployed dev/staging Lambda has:
+The real `AgentRequest` schema accepts these fields, but the request router only honors them when the deployed dev/staging Lambda has both gates enabled:
 
 ```text
 ENABLE_REDTEAM_OVERRIDES=true
+REDTEAM_OVERRIDE_ROLES=redteam-operator
 ```
 
-If the flag is absent, the router returns `redteam_overrides_disabled`, and the live harness treats that as a failed test rather than as successful blocking. This prevents false-positive "100% blocked" reports caused by schema rejection or disabled test plumbing.
+The caller JWT must include one of the allowed red-team roles, for example `redteam-operator`. A normal support user must not be able to inject retrieved context or tool output directly into the live endpoint.
+
+If the environment flag is absent, the router returns `redteam_overrides_disabled`. If the caller role is missing, it returns `redteam_role_required`. The live harness treats both as failed tests rather than as successful blocking. This prevents false-positive "100% blocked" reports caused by disabled test plumbing or an unauthorized caller.
 
 For a true end-to-end RAG poisoning test, the next level is:
 

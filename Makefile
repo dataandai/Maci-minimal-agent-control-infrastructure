@@ -1,4 +1,4 @@
-.PHONY: test lint typecheck security audit build package clean
+.PHONY: test lint typecheck security audit ci build package clean
 
 test:
 	python -m pytest
@@ -14,6 +14,9 @@ security:
 
 audit:
 	python -m pip_audit
+
+ci: test lint typecheck security audit
+	python scripts/verify_redteam_assets.py
 
 build:
 	sam build --template-file infra/template.yaml

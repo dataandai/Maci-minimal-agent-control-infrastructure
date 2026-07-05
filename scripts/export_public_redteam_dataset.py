@@ -169,9 +169,7 @@ def main() -> int:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("
-".join(json.dumps(item, ensure_ascii=False) for item in out_rows) + "
-", encoding="utf-8")
+    output.write_text("\n".join(json.dumps(item, ensure_ascii=False) for item in out_rows) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(output), "records": len(out_rows)}, indent=2))
     return 0
 

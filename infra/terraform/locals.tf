@@ -55,6 +55,7 @@ locals {
     ENABLE_PII_REDACTION       = tostring(var.enable_pii_redaction)
     PII_REDACTION_SALT         = var.pii_redaction_salt
     ENABLE_REDTEAM_OVERRIDES   = tostring(var.enable_redteam_overrides)
+    REDTEAM_OVERRIDE_ROLES      = join(",", var.redteam_override_roles)
   }
 
   dynamodb_crud_actions = [

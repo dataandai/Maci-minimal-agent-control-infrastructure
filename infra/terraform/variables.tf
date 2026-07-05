@@ -233,6 +233,12 @@ variable "enable_redteam_overrides" {
   default     = false
 }
 
+variable "redteam_override_roles" {
+  description = "Caller roles allowed to use test-only red-team override request fields when enable_redteam_overrides=true. Keep narrow and do not grant to normal support users."
+  type        = list(string)
+  default     = ["redteam-operator"]
+}
+
 variable "enable_pii_redaction" {
   description = "Enable deterministic local PII/secrets redaction before storing transcripts and audit events."
   type        = bool
