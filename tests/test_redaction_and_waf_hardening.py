@@ -79,3 +79,46 @@ def test_terraform_contains_api_waf_and_stage_throttling() -> None:
     assert "aws_wafv2_web_acl_association" in api_main
     assert "variable \"enable_waf\"" in api_vars
     assert "enable_waf                = var.enable_api_waf" in root_main
+
+
+def test_redaction_does_not_mask_numeric_token_metrics() -> None:
+    redactor = RedactionService(enabled=True, stable_salt="test")
+
+    result = redactor.redact_value(
+        {
+            "input_tokens": 123,
+            "output_tokens": 45,
+            "total_token_count": 168,
+            "access_token": "real-access-token-value",
+        },
+        path="audit.attributes",
+    )
+
+    assert result.value["input_tokens"] == 123
+    assert result.value["output_tokens"] == 45
+    assert result.value["total_token_count"] == 168
+    assert result.value["access_token"].startswith("[REDACTED:SECRET:")
+    assert not any("input_tokens" in finding.path for finding in result.findings)
+    assert not any("output_tokens" in finding.path for finding in result.findings)
+
+
+def test_model_invoked_audit_preserves_token_metrics_after_redaction() -> None:
+    logger = AuditLogger(redactor=RedactionService(enabled=True, stable_salt="test"))
+    event = AuditEvent(
+        request_id="req-1",
+        tenant_id="tenant-acme",
+        event_type=AuditEventType.MODEL_INVOKED,
+        message="bedrock gateway invoked",
+        attributes={
+            "input_tokens": 321,
+            "output_tokens": 123,
+            "estimated_cost_usd": 0.01,
+            "access_token": "real-access-token-value",
+        },
+    )
+
+    redacted = logger._redact_event(event)
+
+    assert redacted.attributes["input_tokens"] == 321
+    assert redacted.attributes["output_tokens"] == 123
+    assert redacted.attributes["access_token"].startswith("[REDACTED:SECRET:")

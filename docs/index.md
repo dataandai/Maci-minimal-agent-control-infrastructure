@@ -23,6 +23,7 @@ The documentation is organized by reader intent.
 - [`recovery-daemon-operating-model.md`](recovery-daemon-operating-model.md) — scheduled recovery daemon design.
 - [`conversation-ownership-and-tool-recovery-wiring.md`](conversation-ownership-and-tool-recovery-wiring.md) — v0.1.7 review-fix notes for owner-checked conversation resume and real tool workflow transitions.
 - [`api-waf-rate-limiting-and-pii-redaction.md`](api-waf-rate-limiting-and-pii-redaction.md) — v0.2.0 API abuse protection and transcript/audit redaction layer.
+- [`prompt-injection-red-team-suite.md`](prompt-injection-red-team-suite.md) — v0.2.1 prompt-injection, poisoned RAG, tool-output injection and jailbreak red-team suite.
 
 ---
 
@@ -58,6 +59,7 @@ The documentation is organized by reader intent.
 - [`code-audit-v0.1.6.md`](code-audit-v0.1.6.md)
 - [`code-audit-v0.1.7.md`](code-audit-v0.1.7.md)
 - [`code-audit-v0.2.0.md`](code-audit-v0.2.0.md)
+- [`code-audit-v0.2.1.md`](code-audit-v0.2.1.md)
 
 ---
 
@@ -88,7 +90,12 @@ For a reviewer/interviewer:
 5. recovery-daemon-operating-model.md
 6. conversation-ownership-and-tool-recovery-wiring.md
 7. api-waf-rate-limiting-and-pii-redaction.md
-8. code-audit-v0.2.0.md
-9. limitations.md
+8. prompt-injection-red-team-suite.md
+9. code-audit-v0.2.1.md
+10. limitations.md
 ```
 
+
+- [Code Audit v0.2.2](code-audit-v0.2.2.md)
+
+- [`docs/code-audit-v0.2.4.md`](code-audit-v0.2.4.md) — redaction metric preservation and live red-team integration fixes.

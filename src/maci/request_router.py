@@ -98,6 +98,8 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         body = event.get("body") or "{}"
         payload = json.loads(body) if isinstance(body, str) else body
         request = AgentRequest.model_validate(payload)
+        if _has_redteam_override(request) and not _redteam_overrides_enabled():
+            return _response(400, {"error": "redteam_overrides_disabled", "details": "redteam override fields are test-only and require ENABLE_REDTEAM_OVERRIDES=true"})
         governed_request = policy_engine.bind_request(request, tenant_context)
         conversation = conversation_store.start_or_resume(tenant_context, conversation_id=request.conversation_id)
         tenant_context = tenant_context.model_copy(update={"conversation_id": conversation.conversation_id})
@@ -203,36 +205,71 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     mode = "direct"
     prompt = request.input
     retrieval_trace: dict[str, Any] = {}
-    if request.task_type == TaskType.RAG and request.requested_knowledge_base_id:
-        mode = "rag"
-        with trace_recorder.span("bedrock.retrieve", tenant_context, knowledge_base_id=request.requested_knowledge_base_id):
-            retrieve_response = bedrock_gateway.retrieve(
-                BedrockRetrieveRequest(
+    try:
+        if request.task_type == TaskType.RAG and request.requested_knowledge_base_id:
+            mode = "rag"
+            with trace_recorder.span("bedrock.retrieve", tenant_context, knowledge_base_id=request.requested_knowledge_base_id):
+                if request.redteam_context_override is not None:
+                    retrieved_text = request.redteam_context_override
+                    retrieval_trace = {"source_count": 1, "redteam_context_override": True}
+                else:
+                    retrieve_response = bedrock_gateway.retrieve(
+                        BedrockRetrieveRequest(
+                            tenant_context=tenant_context,
+                            knowledge_base_id=request.requested_knowledge_base_id,
+                            query=request.input,
+                            guardrail_identifier=policy.guardrail_identifier,
+                            guardrail_version=policy.guardrail_version,
+                        )
+                    )
+                    retrieved_text = retrieve_response.retrieved_text
+                    retrieval_trace = {"source_count": retrieve_response.source_count}
+                guardrails.enforce_text(
                     tenant_context=tenant_context,
-                    knowledge_base_id=request.requested_knowledge_base_id,
-                    query=request.input,
+                    step="retrieved_context",
+                    text=retrieved_text,
                     guardrail_identifier=policy.guardrail_identifier,
                     guardrail_version=policy.guardrail_version,
                 )
+            prompt = f"Use the tenant-scoped retrieved context below.\n\nContext:\n{retrieved_text}\n\nUser question:\n{request.input}"
+            audit_logger.emit(
+                AuditEvent(
+                    request_id=tenant_context.request_id,
+                    tenant_id=tenant_context.tenant_id,
+                    event_type=AuditEventType.KNOWLEDGE_BASE_RETRIEVED,
+                    message="tenant knowledge base retrieved",
+                    attributes={"knowledge_base_id": request.requested_knowledge_base_id, **retrieval_trace},
+                )
             )
-            guardrails.enforce_text(
-                tenant_context=tenant_context,
-                step="retrieved_context",
-                text=retrieve_response.retrieved_text,
-                guardrail_identifier=policy.guardrail_identifier,
-                guardrail_version=policy.guardrail_version,
-            )
-        retrieval_trace = {"source_count": retrieve_response.source_count}
-        prompt = f"Use the tenant-scoped retrieved context below.\n\nContext:\n{retrieve_response.retrieved_text}\n\nUser question:\n{request.input}"
+
+        if request.redteam_tool_output_override is not None:
+            tool_payload = request.redteam_tool_output_override
+            if not isinstance(tool_payload, dict):
+                tool_payload = {"tool_output": str(tool_payload)}
+            with trace_recorder.span("guardrail.tool_output", tenant_context):
+                guardrails.enforce_payload(
+                    tenant_context=tenant_context,
+                    step="tool_output",
+                    payload=tool_payload,
+                    guardrail_identifier=policy.guardrail_identifier,
+                    guardrail_version=policy.guardrail_version,
+                )
+    except GuardrailIntervention as exc:
+        circuit_breaker.record_failure(tenant_context.tenant_id, FailureCategory.GUARDRAIL_INTERVENED)
         audit_logger.emit(
             AuditEvent(
                 request_id=tenant_context.request_id,
                 tenant_id=tenant_context.tenant_id,
-                event_type=AuditEventType.KNOWLEDGE_BASE_RETRIEVED,
-                message="tenant knowledge base retrieved",
-                attributes={"knowledge_base_id": request.requested_knowledge_base_id, **retrieval_trace},
+                event_type=AuditEventType.GUARDRAIL_INTERVENED,
+                message=exc.result.reason,
+                attributes=exc.result.model_dump(mode="json"),
             )
         )
+        emit_metric("GuardrailIntervened", 1, dimensions={"tenant_id": tenant_context.tenant_id, "step": exc.result.step})
+        conversation_store.append_system_status(tenant_context, conversation.conversation_id, {"error": "guardrail_intervened", "reason": exc.result.reason})
+        conversation_store.update_status(tenant_context.tenant_id, conversation.conversation_id, ConversationStatus.FAILED_SAFE)
+        workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FAILED_SAFE, last_error=exc.result.reason)
+        return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason, "findings": exc.result.findings, "conversation_id": conversation.conversation_id})
 
     workflow_arn = os.getenv("WORKFLOW_STATE_MACHINE_ARN")
     agent_id = os.getenv("BEDROCK_AGENT_ID")
@@ -363,6 +400,14 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     )
     return _response(200, response.model_dump(mode="json"))
 
+
+
+def _has_redteam_override(request: AgentRequest) -> bool:
+    return request.redteam_context_override is not None or request.redteam_tool_output_override is not None
+
+
+def _redteam_overrides_enabled() -> bool:
+    return os.getenv("ENABLE_REDTEAM_OVERRIDES", "false").lower() in {"1", "true", "yes", "on"}
 
 def _start_sync_workflow(state_machine_arn: str, workflow_request: WorkflowInvocationRequest) -> dict[str, Any]:
     try:

@@ -192,3 +192,20 @@ correct account/region/environment
 ```
 
 Do not use destroy as a production rollback strategy.
+
+
+## Live red-team override flag
+
+The v0.2.4 live red-team harness can test poisoned retrieved context and malicious tool-output channels through the real request router. This uses explicit test-only request fields and requires:
+
+```hcl
+enable_redteam_overrides = true
+```
+
+Use this only in dev/staging with test tenants and non-production data. Production should keep:
+
+```hcl
+enable_redteam_overrides = false
+```
+
+If the flag is disabled, the router returns `redteam_overrides_disabled` and the live red-team scorer treats that as a failed test, not as successful blocking.

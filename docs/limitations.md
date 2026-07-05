@@ -192,3 +192,8 @@ It does not guarantee that the model always:
 - avoids all hallucinations.
 
 Output validation, guardrails, tool results, and human review reduce risk. They do not make model reasoning perfect.
+
+
+## v0.2.1 Red-Team Limitations
+
+The local prompt-injection suite is deterministic and model-free. It catches known adversarial patterns across user input, RAG context and tool output, but it is not proof of immunity to prompt injection. Sophisticated payloads, new jailbreaks, multilingual attacks, encoding attacks and model-version-specific failures still require live-model red teaming and human review.

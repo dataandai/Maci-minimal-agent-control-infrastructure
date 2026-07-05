@@ -81,7 +81,7 @@ class RedactionService:
                 # Redact suspicious key names even if the value is not recognized
                 # by a value regex. This catches API keys and tokens that do not
                 # follow a standard format.
-                if _looks_sensitive_key(str(key)) and child not in (None, ""):
+                if _looks_sensitive_key(str(key), child) and child not in (None, ""):
                     out[key] = _placeholder("SECRET", self._fingerprint(str(child)))
                     findings.append(PIIFinding(kind="SECRET", path=child_path, fingerprint=self._fingerprint(str(child))))
                     continue
@@ -134,8 +134,6 @@ _PHONE_PATTERN = _PatternSpec("PHONE", re.compile(r"(?<!\w)(?:\+?\d{1,3}[ -]?)?(
 
 _SENSITIVE_KEYWORDS = (
     "authorization",
-    "auth",
-    "token",
     "secret",
     "api_key",
     "apikey",
@@ -147,11 +145,27 @@ _SENSITIVE_KEYWORDS = (
     "private_key",
 )
 
+_SECRET_TOKEN_KEY_RE = re.compile(r"(?i)(?:^|_)(?:auth|api|access|refresh|bearer)[_-]?token(?:$|_)")
+_SAFE_METRIC_KEY_RE = re.compile(r"(?i)(?:^|_)(?:input|output|total)?_?tokens?$|(?:^|_)(?:token|retry|failure|request)_?count$")
+
 _CARD_CANDIDATE_RE = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 
 
-def _looks_sensitive_key(key: str) -> bool:
+def _looks_sensitive_key(key: str, value: Any | None = None) -> bool:
+    """Return true when a key name is likely to carry a secret.
+
+    This intentionally does **not** treat every key containing ``token`` as
+    secret. Operational metrics such as ``input_tokens`` and ``output_tokens``
+    are not credentials and must remain numeric in audit records. Secret token
+    keys are matched contextually, for example ``access_token``,
+    ``refresh_token``, ``auth_token`` or ``bearer_token``.
+    """
+
     lowered = key.lower().replace("-", "_")
+    if _SAFE_METRIC_KEY_RE.search(lowered) and isinstance(value, int | float):
+        return False
+    if _SECRET_TOKEN_KEY_RE.search(lowered):
+        return True
     return any(keyword in lowered for keyword in _SENSITIVE_KEYWORDS)
 
 

@@ -1,0 +1,67 @@
+{
+  "version": "0.2.3",
+  "description": "Offline and live red-team dataset manifest. Local files are small safe samples/export-shape fixtures; production red-team runs should export permitted rows from the upstream public datasets into the same JSONL schema.",
+  "datasets": [
+    {
+      "dataset_name": "prompt_injections_benchmark",
+      "path": "official_samples/prompt_injections_benchmark_sample.jsonl",
+      "description": "Sample/export shape for prompt-injection classifier datasets with text + label columns.",
+      "source_url": "https://huggingface.co/datasets/qualifire/prompt-injections-benchmark",
+      "license_note": "Sample rows in this repo are synthetic. Export the upstream dataset according to its license before large-scale evals.",
+      "default_channel": "user_input",
+      "default_category": "direct_prompt_injection"
+    },
+    {
+      "dataset_name": "lakera_pint",
+      "path": "official_samples/lakera_pint_sample.jsonl",
+      "description": "Sample/export shape for Lakera PINT-style prompt-injection detector evaluation.",
+      "source_url": "https://github.com/lakeraai/pint-benchmark",
+      "license_note": "Sample rows in this repo are synthetic. Use the upstream benchmark according to its license and evaluation rules.",
+      "default_channel": "user_input",
+      "default_category": "direct_prompt_injection"
+    },
+    {
+      "dataset_name": "promptinject",
+      "path": "official_samples/promptinject_sample.jsonl",
+      "description": "Sample/export shape for PromptInject-style direct prompt injection prompts.",
+      "source_url": "https://github.com/agencyenterprise/PromptInject",
+      "license_note": "Sample rows in this repo are synthetic. Use upstream PromptInject/garak assets according to their licenses.",
+      "default_channel": "user_input",
+      "default_category": "direct_prompt_injection"
+    },
+    {
+      "dataset_name": "jailbreakbench",
+      "path": "official_samples/jailbreakbench_sample.jsonl",
+      "description": "Sample/export shape for JailbreakBench-style jailbreak behavior prompts.",
+      "source_url": "https://huggingface.co/datasets/JailbreakBench/JBB-Behaviors",
+      "license_note": "Sample rows in this repo are synthetic. Export upstream rows according to JailbreakBench safety and license guidance.",
+      "default_channel": "user_input",
+      "default_category": "jailbreak"
+    },
+    {
+      "dataset_name": "harmbench",
+      "path": "official_samples/harmbench_sample.jsonl",
+      "description": "Sample/export shape for HarmBench-style adversarial behavior prompts. Keep live runs in isolated dev/staging tenants only.",
+      "source_url": "https://github.com/centerforaisafety/HarmBench",
+      "license_note": "Sample rows in this repo are non-harmful placeholders. Export upstream rows only when your evaluation environment is approved for safety testing.",
+      "default_channel": "user_input",
+      "default_category": "jailbreak"
+    },
+    {
+      "dataset_name": "generic_jsonl",
+      "path": "official_samples/bipia_indirect_prompt_injection_sample.jsonl",
+      "description": "BIPIA-style indirect prompt injection shape for poisoned retrieved documents.",
+      "source_url": "https://github.com/microsoft/BIPIA",
+      "license_note": "Sample rows in this repo are synthetic. Export upstream BIPIA rows according to its license before large-scale evals.",
+      "default_channel": "retrieved_context",
+      "default_category": "rag_poisoned_document"
+    },
+    {
+      "dataset_name": "generic_jsonl",
+      "path": "official_samples/rag_poisoned_docs_sample.jsonl",
+      "description": "Maci-specific RAG and tool-output poisoned-channel cases for application-boundary testing.",
+      "default_channel": "retrieved_context",
+      "default_category": "rag_poisoned_document"
+    }
+  ]
+}

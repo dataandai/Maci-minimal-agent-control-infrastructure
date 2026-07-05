@@ -449,3 +449,16 @@ CREDIT_EXECUTED -> do not resume, never re-execute credit
 4. Retry with modified amount and same approval.
 5. Expected result: approval/idempotency rejection.
 
+
+
+## Prompt-Injection / Red-Team Failure Runbook
+
+If a red-team case fails:
+
+1. Identify the failing channel: user input, retrieved context, tool output, or model output.
+2. Confirm whether the payload should be blocked or the test is a false positive.
+3. If it should be blocked, update the guardrail boundary, not only the prompt.
+4. Add the payload to `evals/redteam/default_cases.jsonl`.
+5. Add or update a deterministic test under `tests/red_team/`.
+6. Run the full suite with `pytest -q`.
+7. For live-model issues, reproduce in staging with promptfoo/garak and capture trace/audit IDs.

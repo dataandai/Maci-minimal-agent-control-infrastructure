@@ -214,3 +214,10 @@ run red-team prompt-injection tests
 run chaos/recovery tests
 review privacy/retention policy
 ```
+
+
+## v0.2.1 Prompt-Injection Red-Team Layer
+
+Maci now includes a deterministic red-team suite separate from control-plane authorization tests. It covers direct prompt injection, poisoned RAG documents, malicious tool outputs, jailbreak attempts, approval bypass, data exfiltration and hidden policy extraction.
+
+The suite lives in `src/maci/redteam.py`, `tests/red_team/`, and `evals/redteam/default_cases.jsonl`. It is intended to run in CI without live model calls. External live-model tools such as promptfoo or garak can be layered on top for dev/staging red teaming.

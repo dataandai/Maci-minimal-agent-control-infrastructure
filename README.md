@@ -18,6 +18,7 @@ Maci focuses on the deterministic infrastructure around probabilistic model beha
 - guardrails;
 - API Gateway throttling and AWS WAF abuse protection;
 - deterministic PII/secrets redaction before transcript/audit persistence;
+- prompt-injection / red-team CI tests for user input, RAG context, and tool output;
 - human approval for high-risk actions;
 - audit and usage ledgers;
 - user-facing conversation history;
@@ -27,7 +28,7 @@ Maci focuses on the deterministic infrastructure around probabilistic model beha
 - circuit breakers and kill switches;
 - Terraform-first AWS deployment.
 
-Recent v0.2.0 hardening adds API Gateway/WAF request-abuse protection and deterministic PII/secrets redaction before conversation transcripts and audit events are persisted.
+Recent v0.2.2 hardening upgrades the red-team layer from synthetic fixtures into a dataset-backed and live-endpoint-testable harness. It adds public benchmark JSONL adapters, an official dataset manifest, a live HTTP runner for dev/staging APIs, and keeps deterministic offline CI tests for user input, poisoned RAG context, malicious tool output, jailbreak attempts, approval bypass, data exfiltration, and policy extraction attempts.
 
 Maci is intentionally **not** a custom GPU pool, vLLM, AIBrix, Kubernetes inference stack, or another agent framework. It assumes the model layer is managed by **Amazon Bedrock** and focuses on the control plane around Bedrock-based agent workflows.
 
@@ -35,15 +36,15 @@ Maci is intentionally **not** a custom GPU pool, vLLM, AIBrix, Kubernetes infere
 
 ## Current status
 
-Current code release: **v0.2.0 — API WAF + PII Redaction Hardening**  
-Current documentation state: **v0.2.0 code/docs alignment**
+Current code release: **v0.2.2 — Official Dataset + Live Red-Team Harness**  
+Current documentation state: **v0.2.2 code/docs alignment**
 
-Local validation from the v0.2.0 build:
+Local validation from the v0.2.1 build:
 
 ```text
 python -m compileall -q src tests
 pytest -q
-61 passed
+71 passed
 ```
 
 Important honesty boundary:
@@ -103,7 +104,8 @@ API Gateway + Cognito/JWT authorizer
 Request Router Lambda
         |   - derive tenant context from trusted identity
         |   - policy, budget, kill switch, circuit breaker checks
-        |   - input/retrieval/output guardrails
+        |   - input/retrieval/tool-output/output guardrails
+        |   - red-team tested prompt-injection boundary
         |   - PII/secrets redaction before transcript/audit persistence
         |   - conversation + workflow state updates
         |
@@ -151,7 +153,33 @@ Detailed architecture: [`docs/architecture.md`](docs/architecture.md)
 
 Read the API/WAF/redaction hardening guide: [`docs/api-waf-rate-limiting-and-pii-redaction.md`](docs/api-waf-rate-limiting-and-pii-redaction.md)
 
+Read the prompt-injection/red-team suite guide: [`docs/prompt-injection-red-team-suite.md`](docs/prompt-injection-red-team-suite.md)
+
+Read the official-dataset/live red-team guide: [`docs/official-dataset-live-redteam-harness.md`](docs/official-dataset-live-redteam-harness.md)
+
 ---
+
+## Live red-team against dev/staging
+
+The offline red-team suite remains deterministic and model-free:
+
+```bash
+pytest -q tests/red_team/
+```
+
+The live runner sends normalized dataset cases that sends normalized dataset cases to a real API endpoint. Use only with a test tenant and non-production data:
+
+```bash
+export MACI_REDTEAM_JWT="<test-tenant-jwt>"
+python scripts/run_redteam_against_endpoint.py \
+  --endpoint "https://<dev-api>/agent" \
+  --manifest evals/redteam/dataset_manifest.example.json \
+  --redteam-knowledge-base-id "kb-acme-support" \
+  --redteam-tool-name "customer_lookup" \
+  --output redteam-live-report.json
+```
+
+Third-party/public datasets are not downloaded during unit tests. Export an allowed subset to JSONL, register it in a manifest, and run the same cases offline or against dev/staging.
 
 ## Runtime paths
 
@@ -194,6 +222,24 @@ non-user-visible conversation status message
 
 Recovery daemon details: [`docs/recovery-daemon-operating-model.md`](docs/recovery-daemon-operating-model.md)  
 Recovery playbooks: [`docs/recovery-playbooks.md`](docs/recovery-playbooks.md)
+
+### 3. Red-team safety path
+
+```text
+user input / retrieved context / tool output
+        |
+        v
+red-team case channel classification
+        |
+        v
+guardrail check
+        |
+        +--> intervened: safe stop + audit/metric path
+        |
+        +--> allowed: continue through normal deterministic control plane
+```
+
+Prompt-injection red-team details: [`docs/prompt-injection-red-team-suite.md`](docs/prompt-injection-red-team-suite.md)
 
 ---
 
@@ -370,3 +416,46 @@ That is the difference between a PoC agent and a production-style governed agent
 
 - [`docs/conversation-ownership-and-tool-recovery-wiring.md`](docs/conversation-ownership-and-tool-recovery-wiring.md)
 - [`docs/code-audit-v0.1.7.md`](docs/code-audit-v0.1.7.md)
+
+### Red-team evaluation assets
+
+The red-team harness is now packaged and verified as part of the repository. Required assets include:
+
+```text
+evals/redteam/dataset_manifest.example.json
+evals/redteam/official_samples/*.jsonl
+evals/redteam/README.md
+scripts/verify_redteam_assets.py
+scripts/export_public_redteam_dataset.py
+scripts/run_redteam_against_endpoint.py
+```
+
+Verify the assets before running evaluations:
+
+```bash
+python scripts/verify_redteam_assets.py
+pytest -q tests/red_team/
+```
+
+Run the same normalized dataset against a real dev/staging endpoint:
+
+```bash
+export MACI_REDTEAM_JWT="<test-tenant-jwt>"
+python scripts/run_redteam_against_endpoint.py \
+  --endpoint "https://<dev-api>/agent" \
+  --manifest evals/redteam/dataset_manifest.example.json \
+  --redteam-knowledge-base-id "kb-acme-support" \
+  --redteam-tool-name "customer_lookup" \
+  --output redteam-live-report.json
+```
+
+The local sample rows are small and safe. For real public benchmark evaluation, export permitted rows from Lakera PINT, PromptInject/garak, JailbreakBench, HarmBench, BIPIA, or another approved dataset into Maci JSONL with `scripts/export_public_redteam_dataset.py`.
+
+
+### v0.2.4 integration fix notes
+
+- Numeric token metrics such as `input_tokens` and `output_tokens` are preserved in audit records. Credential token keys such as `access_token` and `refresh_token` are still redacted.
+- Live red-team RAG/tool-output cases use explicit test-only request fields and require `ENABLE_REDTEAM_OVERRIDES=true` in dev/staging.
+- The live red-team scorer no longer treats arbitrary `400 invalid_request_schema` responses as successful blocking. Only explicit security-control outcomes such as `guardrail_intervened` or `policy_denied` count as blocked.
+
+See [`docs/code-audit-v0.2.4.md`](docs/code-audit-v0.2.4.md).

@@ -254,3 +254,14 @@ All allow and deny paths are auditable.
 
 These checks should run in local tests and again as AWS dev smoke tests after deployment.
 
+
+
+## v0.2.1 Red-Team Readiness Gate
+
+Before production promotion, run:
+
+```bash
+pytest -q tests/red_team
+```
+
+For staging, add an external application-level run with promptfoo or garak against a controlled dev/staging endpoint. Do not run live red-team probes against production tenants without written approval, strict rate limits, test accounts and active monitoring.

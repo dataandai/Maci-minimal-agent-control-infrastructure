@@ -418,3 +418,26 @@ Guardrails = model/input/output safety control
 ```
 
 These controls complement each other; none of them replaces the others.
+
+
+## Prompt-Injection Red-Team Boundary
+
+v0.2.1 adds a separate red-team safety path that tests untrusted natural-language channels independently from normal authorization tests.
+
+```text
+User prompt / retrieved document / tool output
+        |
+        v
+Channel-aware red-team fixture
+        |
+        v
+Guardrail boundary
+        |
+        +--> intervened: safe stop, audit/metric path
+        |
+        +--> allowed: continue through deterministic control plane
+```
+
+This layer is deliberately model-free in local CI. It validates that known adversarial strings in user input, RAG context, and tool output are stopped before they can influence tool execution or final responses.
+
+External tools such as promptfoo or garak can be used later against a deployed dev/staging endpoint, but they are not part of the default deterministic unit-test path.

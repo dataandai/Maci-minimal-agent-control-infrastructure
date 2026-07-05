@@ -168,3 +168,10 @@ The storage foundation exists; the product read API must enforce this before pro
 - Incorrect Terraform variables can deploy to wrong account/region.
 - Recovery integration with external backends requires additional reconciliation logic.
 - Compliance requirements depend on the deploying organization and jurisdiction.
+
+
+## v0.2.1 Red-Team Threat Coverage
+
+The threat model now explicitly separates deterministic control-plane abuse from prompt-injection abuse. v0.2.1 adds tests for untrusted text entering through user prompts, retrieved RAG content, and tool output. These tests map to OWASP LLM01-style prompt injection, sensitive information disclosure, and excessive agency concerns.
+
+Residual risk remains: deterministic fixtures do not prove that every unknown jailbreak or indirect prompt injection is blocked. Live-model red teaming is still required before production use.

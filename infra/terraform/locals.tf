@@ -54,6 +54,7 @@ locals {
     METRICS_NAMESPACE          = local.metrics_namespace
     ENABLE_PII_REDACTION       = tostring(var.enable_pii_redaction)
     PII_REDACTION_SALT         = var.pii_redaction_salt
+    ENABLE_REDTEAM_OVERRIDES   = tostring(var.enable_redteam_overrides)
   }
 
   dynamodb_crud_actions = [

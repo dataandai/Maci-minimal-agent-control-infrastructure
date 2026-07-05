@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.2.4 - Redaction Metrics and Live Red-Team Integration Fixes
+
+- Fixed redaction false positives where numeric `input_tokens`, `output_tokens`, and related token-count metrics were redacted as secrets.
+- Kept contextual credential token redaction for keys such as `access_token`, `refresh_token`, `auth_token`, and `bearer_token`.
+- Added test-only `redteam_context_override` and `redteam_tool_output_override` fields to the real `AgentRequest` schema.
+- Added `ENABLE_REDTEAM_OVERRIDES=true` as an explicit dev/staging safety gate for live RAG/tool-output injection tests.
+- Fixed `LiveEndpointRedTeamRunner` scoring so arbitrary 400/schema errors no longer count as successful security blocking.
+- Added real `request_router.lambda_handler` integration tests for poisoned retrieved context and malicious tool-output override paths.
+- Added regression tests proving `MODEL_INVOKED` audit events preserve token metrics after redaction.
+- Expanded local validation from 75 to 81 tests.
+
+## v0.2.3 - Completed Red-Team Assets and Live Evaluation Harness
+
+- Added hard-packaged `evals/redteam/dataset_manifest.example.json` and all referenced `official_samples/*.jsonl` files.
+- Added `evals/redteam/README.md` with offline, live endpoint, and public dataset export instructions.
+- Added `scripts/verify_redteam_assets.py` so packaging fails visibly when red-team assets are missing.
+- Added `scripts/export_public_redteam_dataset.py` for Hugging Face, URL, and local JSONL/JSON/CSV exports into Maci normalized red-team JSONL.
+- Added regression tests that assert the red-team manifest, samples, scripts, channels, and dataset families are actually present and loadable.
+- Kept live endpoint testing separate from offline CI; live runs require a dev/staging endpoint and test-tenant JWT.
+
+
+## v0.2.1 - prompt-injection and red-team suite
+
+- Added deterministic `src/maci/redteam.py` test harness for application-level red-team cases.
+- Added prompt-injection cases for user input, poisoned RAG context, malicious tool output, jailbreak attempts, approval bypass, data exfiltration, and policy extraction.
+- Added benign control case to reduce false-positive drift.
+- Expanded guardrail suspicious phrase coverage for hidden policy extraction, developer/system prompt extraction, approval bypass, DAN-style jailbreaks, and cross-tenant exfiltration language.
+- Added `tests/red_team/test_prompt_injection_redteam.py` as a separate test category from control-plane authorization tests.
+- Added `evals/redteam/default_cases.jsonl` for portable adversarial fixtures.
+- Added optional external runner examples for promptfoo and garak under `evals/`.
+- Added dedicated documentation in `docs/prompt-injection-red-team-suite.md`.
+- Expanded local validation from 61 to 68 tests.
+
 ## v0.2.0 - API WAF and PII redaction hardening
 
 - Added API Gateway HTTP API stage throttling variables for burst and steady-state request limits.
@@ -116,3 +149,14 @@ This release provides a Terraform-first AWS foundation for governed agent system
 - Unit and adversarial test coverage for identity, policy, tools, authorization, approval, guardrails and graph safety.
 
 The version number is intentionally separate from the product name. The product is **Maci**, and this is its first baseline release: **v0.1.0**.
+
+## v0.2.2 — Official Dataset + Live Red-Team Harness
+
+- Added official/public red-team dataset adapter layer in `src/maci/redteam.py`.
+- Added JSONL manifest loader for exported benchmark subsets.
+- Added supported dataset names for Prompt Injections Benchmark-style exports, Lakera PINT-style exports, PromptInject, JailbreakBench, HarmBench, garak promptinject, promptfoo redteam, and generic JSONL.
+- Added `evals/redteam/dataset_manifest.example.json` and sample JSONL export shapes.
+- Added live HTTP endpoint red-team runner: `scripts/run_redteam_against_endpoint.py`.
+- Added optional Hugging Face export helper: `scripts/export_hf_redteam_dataset.py`.
+- Added tests proving dataset normalization, offline guardrail execution, and live HTTP scoring through a real local HTTP server.
+- Added docs for live dev/staging red-team execution and dataset handling.

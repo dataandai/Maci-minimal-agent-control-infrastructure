@@ -116,7 +116,7 @@ It redacts obvious sensitive values such as:
 ```text
 email addresses
 authorization bearer tokens
-sensitive dictionary keys such as token/password/secret/api_key/cookie/session
+sensitive dictionary keys such as access_token/refresh_token/auth_token/password/secret/api_key/cookie/session
 payment-card-like numbers that pass Luhn validation
 IBAN-like identifiers
 SSN-like identifiers
@@ -132,6 +132,29 @@ stable fingerprints for correlation
 ```
 
 It does not store the raw detected sensitive value in findings.
+
+### Token metrics are not credentials
+
+v0.2.4 explicitly prevents redaction from corrupting ordinary LLM usage metrics. These fields remain numeric in audit events and transcript metadata:
+
+```text
+input_tokens
+output_tokens
+total_token_count
+token_count
+```
+
+Credential-like token keys are still redacted contextually:
+
+```text
+access_token
+refresh_token
+auth_token
+bearer_token
+api_token
+```
+
+This matters because audit records must preserve usage evidence while still removing actual credentials.
 
 Example:
 

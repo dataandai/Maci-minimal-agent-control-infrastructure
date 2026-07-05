@@ -54,6 +54,8 @@ class AgentRequest(StrictModel):
     requested_tools: tuple[str, ...] = Field(default_factory=tuple)
     max_output_tokens: PositiveInt = 1024
     conversation_id: str | None = Field(default=None, min_length=1)
+    redteam_context_override: str | None = Field(default=None, min_length=1, max_length=12000)
+    redteam_tool_output_override: str | dict[str, Any] | None = None
 
 
 class GovernedRequest(StrictModel):

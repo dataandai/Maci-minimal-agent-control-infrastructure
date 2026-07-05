@@ -226,6 +226,13 @@ variable "waf_blocked_country_codes" {
   default     = []
 }
 
+
+variable "enable_redteam_overrides" {
+  description = "Enable test-only red-team override request fields in dev/staging. Keep false in production."
+  type        = bool
+  default     = false
+}
+
 variable "enable_pii_redaction" {
   description = "Enable deterministic local PII/secrets redaction before storing transcripts and audit events."
   type        = bool
