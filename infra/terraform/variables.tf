@@ -194,3 +194,46 @@ variable "recovery_max_attempts" {
   type        = number
   default     = 3
 }
+
+
+variable "api_throttling_burst_limit" {
+  description = "API Gateway HTTP API stage burst limit for the public agent API. Separate from tenant budget checks."
+  type        = number
+  default     = 100
+}
+
+variable "api_throttling_rate_limit" {
+  description = "API Gateway HTTP API stage steady-state requests per second limit for the public agent API."
+  type        = number
+  default     = 50
+}
+
+variable "enable_api_waf" {
+  description = "Attach AWS WAFv2 WebACL to the public API Gateway stage."
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit_per_5min" {
+  description = "AWS WAF rate-based block limit per source IP over the WAF evaluation window."
+  type        = number
+  default     = 1000
+}
+
+variable "waf_blocked_country_codes" {
+  description = "Optional ISO country codes to block at WAF. Empty by default; use only when legally/operationally justified."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_pii_redaction" {
+  description = "Enable deterministic local PII/secrets redaction before storing transcripts and audit events."
+  type        = bool
+  default     = true
+}
+
+variable "pii_redaction_salt" {
+  description = "Stable salt for redaction fingerprints. Do not use a secret required for decryption; this is for correlation only."
+  type        = string
+  default     = "maci-redaction-v1"
+}

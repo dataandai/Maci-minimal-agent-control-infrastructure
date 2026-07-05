@@ -52,6 +52,8 @@ locals {
     RECOVERY_MAX_BACKOFF_SECONDS = "3600"
     RECOVERY_MAX_ITEMS         = tostring(var.recovery_max_items)
     METRICS_NAMESPACE          = local.metrics_namespace
+    ENABLE_PII_REDACTION       = tostring(var.enable_pii_redaction)
+    PII_REDACTION_SALT         = var.pii_redaction_salt
   }
 
   dynamodb_crud_actions = [

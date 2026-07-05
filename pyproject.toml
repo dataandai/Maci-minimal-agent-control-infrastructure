@@ -1,6 +1,6 @@
 [project]
 name = "maci"
-version = "0.1.7"
+version = "0.2.0"
 description = "Minimal agent control infrastructure for governed AWS Bedrock/Lambda agent systems"
 requires-python = ">=3.11"
 dependencies = [

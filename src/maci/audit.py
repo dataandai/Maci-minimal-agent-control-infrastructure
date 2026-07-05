@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
+from .redaction import RedactionService, finding_labels
 from .schemas import StrictModel
 
 
@@ -63,11 +64,12 @@ class AuditLogger:
     _last_hash_by_tenant: dict[str, str] = {}
     _last_sequence_by_tenant: dict[str, int] = {}
 
-    def __init__(self, table_name: str | None = None, archive_bucket: str | None = None, table: object | None = None) -> None:
+    def __init__(self, table_name: str | None = None, archive_bucket: str | None = None, table: object | None = None, redactor: RedactionService | None = None) -> None:
         self.table_name = table_name or os.getenv("AUDIT_TABLE_NAME")
         self.archive_bucket = archive_bucket or os.getenv("AUDIT_ARCHIVE_BUCKET")
         self._table = table
         self._s3 = None
+        self._redactor = redactor or RedactionService()
         if (self.table_name or self.archive_bucket) and self._table is None:
             try:
                 import boto3  # type: ignore
@@ -88,6 +90,7 @@ class AuditLogger:
                 self._s3 = None
 
     def emit(self, event: AuditEvent) -> None:
+        event = self._redact_event(event)
         if self._table is not None:
             item = self._emit_dynamodb_chained(event)
         else:
@@ -103,6 +106,18 @@ class AuditLogger:
             )
         if self._table is None and self._s3 is None:
             print(json.dumps(item, sort_keys=True))
+
+
+    def _redact_event(self, event: AuditEvent) -> AuditEvent:
+        message_result = self._redactor.redact_text(event.message, path="audit.message")
+        attributes_result = self._redactor.redact_value(event.attributes, path="audit.attributes")
+        findings = (*message_result.findings, *attributes_result.findings)
+        if not findings:
+            return event
+        attributes = dict(attributes_result.value) if isinstance(attributes_result.value, dict) else {"redacted_attributes": attributes_result.value}
+        attributes["pii_redaction_status"] = "redacted"
+        attributes["pii_findings"] = finding_labels(findings)
+        return event.model_copy(update={"message": message_result.value, "attributes": attributes})
 
     def _emit_local_chained(self, event: AuditEvent) -> dict[str, Any]:
         item = event.model_dump(mode="json")

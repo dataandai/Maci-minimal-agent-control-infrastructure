@@ -33,13 +33,14 @@ under policy, with audit, cost tracking, idempotency, and recovery controls?
 Client / Support Console
         |
         v
-API Gateway HTTP API + Cognito/JWT authorizer
+API Gateway HTTP API + Cognito/JWT authorizer + stage throttling + AWS WAF
         |
         v
 Request Router Lambda
         |
         +--> Policy Engine
         +--> Guardrails
+        +--> RedactionService
         +--> ConversationStore
         +--> WorkflowStateStore
         +--> UsageLedger
@@ -83,6 +84,7 @@ infra/terraform
 Terraform includes the hardening resources that matter for this control-plane pattern:
 
 - Cognito/JWT/API boundary;
+- API Gateway stage throttling and AWS WAF WebACL;
 - request router Lambda;
 - tool Lambdas;
 - DynamoDB state tables;
@@ -108,7 +110,8 @@ The SAM template under `infra/template.yaml` is retained as a lightweight compat
 8. Tenant policy is loaded.
 9. Kill switch, circuit breaker and budget checks run.
 10. Input guardrail runs.
-11. LLM plans the next step.
+11. Conversation and audit payloads are redacted before persistence.
+12. LLM plans the next step.
 12. Tool request is produced.
 13. Tool handler re-derives trusted context from Bedrock sessionAttributes where applicable.
 14. Tool handler checks agent registry, tool allowlist, role, action and resource ownership.
@@ -117,8 +120,8 @@ The SAM template under `infra/template.yaml` is retained as a lightweight compat
 17. High-risk tools create or require human approval.
 18. Assistant response is composed.
 19. Output validation and guardrail checks run.
-20. Conversation, audit, usage and trace records are written.
-21. Workflow state transitions to the next durable status.
+21. Conversation, audit, usage and trace records are written.
+22. Workflow state transitions to the next durable status.
 ```
 
 ---
@@ -388,3 +391,30 @@ The system should deny or stop when:
 - chaos/recovery tests;
 - prompt-injection/adversarial red-team tests;
 - compliance/privacy/legal review.
+
+
+---
+
+## API abuse protection and redaction boundary
+
+v0.2.0 adds two production-hardening controls to the architecture:
+
+```text
+API Gateway stage throttling + AWS WAF
+RedactionService before transcript/audit persistence
+```
+
+API Gateway throttling and WAF run before the request router Lambda. They reduce request-flood and known-bad-input pressure before the agent control plane has to spend model/tool budget.
+
+The redaction boundary runs before conversation and audit records are persisted. This avoids treating `contains_pii` and `redaction_status` as placeholder fields: redaction is now an enforced write-path behavior.
+
+Important distinction:
+
+```text
+WAF/rate limiting = outer availability and abuse protection
+budget/circuit breaker = tenant/workflow runtime protection
+RedactionService = persistence safety control
+Guardrails = model/input/output safety control
+```
+
+These controls complement each other; none of them replaces the others.

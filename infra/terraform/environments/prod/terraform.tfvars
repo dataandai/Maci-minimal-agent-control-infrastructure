@@ -32,3 +32,12 @@ recovery_max_items           = 25
 recovery_stale_seconds       = 300
 recovery_lease_seconds       = 120
 recovery_max_attempts        = 3
+
+# API abuse protection and local redaction. Tune with real traffic and WAF sampled requests.
+api_throttling_burst_limit = 500
+api_throttling_rate_limit  = 250
+enable_api_waf             = true
+waf_rate_limit_per_5min    = 5000
+waf_blocked_country_codes  = []
+enable_pii_redaction       = true
+pii_redaction_salt         = "maci-redaction-v1"

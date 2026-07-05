@@ -16,6 +16,8 @@ Maci focuses on the deterministic infrastructure around probabilistic model beha
 - tenant/resource ownership checks;
 - strict tool schemas;
 - guardrails;
+- API Gateway throttling and AWS WAF abuse protection;
+- deterministic PII/secrets redaction before transcript/audit persistence;
 - human approval for high-risk actions;
 - audit and usage ledgers;
 - user-facing conversation history;
@@ -25,7 +27,7 @@ Maci focuses on the deterministic infrastructure around probabilistic model beha
 - circuit breakers and kill switches;
 - Terraform-first AWS deployment.
 
-Recent v0.1.7 hardening also makes conversation resume an ownership-checked resource operation and wires real tool handlers into the persistent workflow state machine used by the recovery daemon.
+Recent v0.2.0 hardening adds API Gateway/WAF request-abuse protection and deterministic PII/secrets redaction before conversation transcripts and audit events are persisted.
 
 Maci is intentionally **not** a custom GPU pool, vLLM, AIBrix, Kubernetes inference stack, or another agent framework. It assumes the model layer is managed by **Amazon Bedrock** and focuses on the control plane around Bedrock-based agent workflows.
 
@@ -33,15 +35,15 @@ Maci is intentionally **not** a custom GPU pool, vLLM, AIBrix, Kubernetes infere
 
 ## Current status
 
-Current code release: **v0.1.7 — Conversation Ownership + Tool Recovery Wiring**  
-Current documentation state: **v0.1.7 code/docs alignment**
+Current code release: **v0.2.0 — API WAF + PII Redaction Hardening**  
+Current documentation state: **v0.2.0 code/docs alignment**
 
-Local validation from the v0.1.7 build:
+Local validation from the v0.2.0 build:
 
 ```text
 python -m compileall -q src tests
 pytest -q
-57 passed
+61 passed
 ```
 
 Important honesty boundary:
@@ -95,12 +97,14 @@ Client / Support Console
         |
         v
 API Gateway + Cognito/JWT authorizer
-        |
+        |   - stage throttling
+        |   - AWS WAF rate-based and managed-rule protection
         v
 Request Router Lambda
         |   - derive tenant context from trusted identity
         |   - policy, budget, kill switch, circuit breaker checks
         |   - input/retrieval/output guardrails
+        |   - PII/secrets redaction before transcript/audit persistence
         |   - conversation + workflow state updates
         |
         +--> Amazon Bedrock Runtime / Converse
@@ -144,6 +148,8 @@ CloudWatch / OTel-shaped traces
 ```
 
 Detailed architecture: [`docs/architecture.md`](docs/architecture.md)
+
+Read the API/WAF/redaction hardening guide: [`docs/api-waf-rate-limiting-and-pii-redaction.md`](docs/api-waf-rate-limiting-and-pii-redaction.md)
 
 ---
 
@@ -342,7 +348,7 @@ Start with:
 - [`docs/production-readiness.md`](docs/production-readiness.md) — promotion gates;
 - [`docs/limitations.md`](docs/limitations.md) — honest boundaries.
 
-Latest local code audit: [`docs/code-audit-v0.1.6.md`](docs/code-audit-v0.1.6.md)
+Latest local code audit: [`docs/code-audit-v0.2.0.md`](docs/code-audit-v0.2.0.md)
 
 ---
 
@@ -353,3 +359,14 @@ The LLM is allowed to propose.
 The system must enforce.
 
 That is the difference between a PoC agent and a production-style governed agent system.
+
+
+## v0.2.0 production hardening documentation
+
+- [`docs/api-waf-rate-limiting-and-pii-redaction.md`](docs/api-waf-rate-limiting-and-pii-redaction.md)
+- [`docs/code-audit-v0.2.0.md`](docs/code-audit-v0.2.0.md)
+
+## v0.1.7 review-fix documentation
+
+- [`docs/conversation-ownership-and-tool-recovery-wiring.md`](docs/conversation-ownership-and-tool-recovery-wiring.md)
+- [`docs/code-audit-v0.1.7.md`](docs/code-audit-v0.1.7.md)

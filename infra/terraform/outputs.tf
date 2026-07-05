@@ -69,3 +69,7 @@ output "workflow_state_table_name" { value = module.dynamodb.workflow_state_tabl
 output "idempotency_table_name" { value = module.dynamodb.idempotency_table_name }
 output "recovery_daemon_function_name" { value = module.recovery_daemon.function_name }
 output "recovery_daemon_schedule_name" { value = aws_cloudwatch_event_rule.recovery_daemon.name }
+
+output "api_waf_web_acl_arn" { value = module.api.waf_web_acl_arn }
+output "api_throttling_burst_limit" { value = module.api.throttling_burst_limit }
+output "api_throttling_rate_limit" { value = module.api.throttling_rate_limit }

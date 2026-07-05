@@ -288,3 +288,36 @@ Production systems still need to wire the resume action into the selected orches
 - manual review UI;
 - runbook-based operator workflow;
 - backend reconciliation for external systems.
+
+---
+
+## v0.1.7: Recovery depends on real persisted tool states
+
+A recovery daemon can only make safe decisions from durable truth.
+
+If tool handlers do not persist completed steps, the daemon may see only an early planning state and make an unsafe resume classification.
+
+For this reason, the real tool handlers must update workflow state at business boundaries:
+
+```text
+customer lookup completed
+billing check completed
+ticket creation completed
+account credit approval required
+account credit approval validated
+account credit executed
+```
+
+The daemon should treat missing or ambiguous state conservatively.
+
+Rules of thumb:
+
+```text
+Read-only completed states can be resumed automatically.
+Write-adjacent states require idempotency.
+Approval-adjacent states require human review or strict approval-bound idempotency.
+High-risk executed states must not be re-executed.
+```
+
+The daemon itself must continue to avoid direct high-risk business execution. It may claim, classify, audit, and route recovery, but high-risk execution must still pass through the normal tool, policy, approval, and idempotency path.
+

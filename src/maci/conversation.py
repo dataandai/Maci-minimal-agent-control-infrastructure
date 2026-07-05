@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import Field
 
+from .redaction import RedactionService, finding_labels
 from .schemas import StrictModel, TenantContext
 
 
@@ -56,6 +57,7 @@ class ConversationMessage(StrictModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     visible_to_user: bool = True
     redaction_status: str = "none"
+    pii_findings: tuple[str, ...] = Field(default_factory=tuple)
 
 
 @dataclass
@@ -76,6 +78,7 @@ class ConversationStore:
     s3_client: object | None = None
     memory_records: dict[tuple[str, str], ConversationRecord] = field(default_factory=dict)
     memory_messages: dict[tuple[str, str], list[ConversationMessage]] = field(default_factory=dict)
+    redactor: RedactionService = field(default_factory=RedactionService)
 
     def __post_init__(self) -> None:
         self.table_name = self.table_name or os.getenv("CONVERSATION_TABLE_NAME")
@@ -130,6 +133,7 @@ class ConversationStore:
         return self.memory_records.get((tenant_id, conversation_id))
 
     def append_message(self, message: ConversationMessage) -> ConversationMessage:
+        message = self._redact_message(message)
         self._put_message(message)
         existing = self.get(message.tenant_id, message.conversation_id)
         if existing:
@@ -138,6 +142,7 @@ class ConversationStore:
                     update={
                         "updated_at": datetime.now(timezone.utc),
                         "last_message_id": message.message_id,
+                        "contains_pii": existing.contains_pii or bool(message.pii_findings),
                     }
                 )
             )
@@ -237,6 +242,20 @@ class ConversationStore:
             return tuple(sorted(messages, key=lambda msg: msg.created_at))
         return tuple(self.memory_messages.get((tenant_id, conversation_id), []))
 
+
+
+    def _redact_message(self, message: ConversationMessage) -> ConversationMessage:
+        result = self.redactor.redact_value(message.content, path=f"conversation.{message.message_type.value}")
+        if not result.redacted:
+            return message
+        inherited_status = message.redaction_status if message.redaction_status != "none" else "redacted"
+        return message.model_copy(
+            update={
+                "content": result.value,
+                "redaction_status": inherited_status,
+                "pii_findings": finding_labels(result.findings),
+            }
+        )
 
     def _put_new_record(self, record: ConversationRecord) -> ConversationRecord:
         """Create a conversation record without clobbering another owner.

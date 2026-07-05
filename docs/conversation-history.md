@@ -243,3 +243,35 @@ The foundation exists, but production systems still need to add:
 - retention policy enforcement;
 - authorization model for who can read which conversation;
 - legal hold process where required.
+
+---
+
+## v0.1.7: Conversation ownership enforcement
+
+A conversation is not just a correlation ID. It is a tenant-scoped resource.
+
+The system must therefore protect conversation resume the same way it protects customer records, tickets, approvals, and other tenant resources.
+
+Required behavior:
+
+```text
+1. The authenticated tenant remains the tenant boundary.
+2. A request body conversation_id must not override a trusted conversation claim.
+3. Resuming an existing conversation requires an ownership check.
+4. The existing conversation owner must match the authenticated user unless an explicit sharing/assignment policy exists.
+5. Creating a new conversation should use conditional create semantics so a race cannot overwrite another owner.
+```
+
+Conceptual rule:
+
+```text
+existing = load_conversation(tenant_id, conversation_id)
+
+if existing exists and existing.created_by_user_id != tenant_context.user_id:
+    deny resume
+```
+
+This prevents a same-tenant user from appending to another user's transcript by guessing or reusing `conversation_id`.
+
+If team-shared conversations are added later, they should be represented as explicit policy, for example assignment-based or role-based read access. They should not be created by silently accepting arbitrary conversation IDs.
+

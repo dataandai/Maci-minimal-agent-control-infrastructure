@@ -386,3 +386,66 @@ conversation contains leaked data
 kill switch was triggered unexpectedly
 recovery daemon repeatedly escalates same state
 ```
+
+---
+
+## Runbook: v0.1.7 conversation and recovery checks
+
+Use this checklist after deploying the conversation ownership and tool recovery wiring changes.
+
+### Check 1: same-tenant conversation ownership
+
+1. Create a conversation as user A in tenant X.
+2. Try to append to the same `conversation_id` as user B in tenant X.
+3. Expected result: request is denied.
+4. Confirm no message from user B appears in user A's transcript.
+5. Confirm an audit/security event exists if the denial path is audited.
+
+### Check 2: trusted conversation claim cannot be overridden
+
+1. Create a trusted context with `conversation_id = conv-a`.
+2. Send a request body with `conversation_id = conv-b`.
+3. Expected result: binding error or request denial.
+4. Confirm the system does not write to `conv-b`.
+
+### Check 3: real tool handlers write workflow state
+
+Run a normal billing investigation and verify persisted workflow state transitions:
+
+```text
+CUSTOMER_LOOKUP_DONE
+BILLING_CHECK_DONE
+TICKET_CREATED
+WAITING_FOR_APPROVAL
+APPROVED
+CREDIT_EXECUTED
+```
+
+The exact final state depends on where the test stops. Before human approval, `WAITING_FOR_APPROVAL` is expected. After approved credit execution, `CREDIT_EXECUTED` is expected.
+
+### Check 4: recovery daemon classification
+
+Create or observe stale records in these states:
+
+```text
+TICKET_CREATED
+WAITING_FOR_APPROVAL
+CREDIT_EXECUTED
+```
+
+Expected behavior:
+
+```text
+TICKET_CREATED -> idempotent resume path, not duplicate ticket creation
+WAITING_FOR_APPROVAL -> human review required, not auto-resume
+CREDIT_EXECUTED -> do not resume, never re-execute credit
+```
+
+### Check 5: account credit idempotency still holds
+
+1. Execute account credit once with approved payload.
+2. Retry the same approved payload.
+3. Expected result: deduplicated success or no-op, not a second credit.
+4. Retry with modified amount and same approval.
+5. Expected result: approval/idempotency rejection.
+

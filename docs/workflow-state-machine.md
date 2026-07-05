@@ -254,3 +254,43 @@ It does not directly:
 - override policy.
 
 It reconstructs state, classifies the resume path, audits the decision, and routes the workflow toward safe resume or human review.
+
+---
+
+## v0.1.7: Real tool handler state wiring
+
+The workflow state machine is only useful if real execution paths write real state transitions.
+
+The recovery daemon must not rely only on states that can be constructed in tests. Tool handlers must persist their own progress before or after meaningful business boundaries.
+
+Required tool transitions:
+
+```text
+customer_lookup   -> CUSTOMER_LOOKUP_DONE
+billing_check     -> BILLING_CHECK_DONE
+ticket_creation   -> TICKET_CREATED
+account_credit    -> WAITING_FOR_APPROVAL
+account_credit    -> APPROVED
+account_credit    -> CREDIT_EXECUTED
+```
+
+Why this matters:
+
+```text
+If the workflow crashes after ticket creation, recovery must know that a ticket may already exist.
+If the workflow crashes while waiting for approval, recovery must not classify the workflow as a safe planning retry.
+If account credit was already executed, recovery must never execute it again.
+```
+
+Write-adjacent transitions should also persist the relevant idempotency context.
+
+Examples:
+
+```text
+TICKET_CREATED should include ticket idempotency key or created ticket ID.
+WAITING_FOR_APPROVAL should include approval_id and payload hash reference.
+CREDIT_EXECUTED should include credit execution idempotency key or credit ID.
+```
+
+The recovery daemon reads workflow state. It does not infer completed business actions from model text.
+

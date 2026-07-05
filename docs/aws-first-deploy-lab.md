@@ -152,3 +152,28 @@ IAM too broad after quick fix
 ```
 
 Detailed pitfalls: [`aws-deployment-guide-for-junior-engineers.md`](aws-deployment-guide-for-junior-engineers.md)
+
+---
+
+## v0.2.0 WAF and redaction deploy checks
+
+Before treating the dev deployment as useful, confirm:
+
+```text
+API Gateway stage throttling variables are set for the environment.
+AWS WAF WebACL is created and associated with the API Gateway stage.
+WAF rate-based rule emits CloudWatch metrics.
+ENABLE_PII_REDACTION is true in Lambda environment variables.
+A test email/token/card-like value is redacted in conversation transcript storage.
+A test email/token/card-like value is redacted in audit events before persistence.
+```
+
+Useful Terraform outputs:
+
+```text
+api_waf_web_acl_arn
+api_throttling_burst_limit
+api_throttling_rate_limit
+```
+
+The WAF/rate-limiting layer protects API availability. It does not replace tenant budgets, circuit breakers, or policy checks.

@@ -493,8 +493,13 @@ module "api" {
   admin_lambda_invoke_arn       = module.admin.invoke_arn
   jwt_issuer                    = module.auth.issuer
   jwt_audience         = [module.auth.user_pool_client_id]
-  cors_allowed_origins = var.cors_allowed_origins
-  log_retention_days   = var.log_retention_days
+  cors_allowed_origins      = var.cors_allowed_origins
+  log_retention_days        = var.log_retention_days
+  throttling_burst_limit    = var.api_throttling_burst_limit
+  throttling_rate_limit     = var.api_throttling_rate_limit
+  enable_waf                = var.enable_api_waf
+  waf_rate_limit_per_5min   = var.waf_rate_limit_per_5min
+  waf_blocked_country_codes = var.waf_blocked_country_codes
   tags = local.tags
 }
 

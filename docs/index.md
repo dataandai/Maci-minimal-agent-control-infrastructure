@@ -21,6 +21,8 @@ The documentation is organized by reader intent.
 - [`agent-conversation-logging-and-audit-guide.md`](agent-conversation-logging-and-audit-guide.md) — difference between transcript, audit, logs, and usage ledger.
 - [`workflow-state-machine.md`](workflow-state-machine.md) — durable workflow states and resume classification.
 - [`recovery-daemon-operating-model.md`](recovery-daemon-operating-model.md) — scheduled recovery daemon design.
+- [`conversation-ownership-and-tool-recovery-wiring.md`](conversation-ownership-and-tool-recovery-wiring.md) — v0.1.7 review-fix notes for owner-checked conversation resume and real tool workflow transitions.
+- [`api-waf-rate-limiting-and-pii-redaction.md`](api-waf-rate-limiting-and-pii-redaction.md) — v0.2.0 API abuse protection and transcript/audit redaction layer.
 
 ---
 
@@ -54,6 +56,8 @@ The documentation is organized by reader intent.
 - [`code-audit-v0.1.4.md`](code-audit-v0.1.4.md)
 - [`code-audit-v0.1.5.md`](code-audit-v0.1.5.md)
 - [`code-audit-v0.1.6.md`](code-audit-v0.1.6.md)
+- [`code-audit-v0.1.7.md`](code-audit-v0.1.7.md)
+- [`code-audit-v0.2.0.md`](code-audit-v0.2.0.md)
 
 ---
 
@@ -81,8 +85,10 @@ For a reviewer/interviewer:
 2. architecture.md
 3. security-hardening.md
 4. threat-model.md
-5. code-audit-v0.1.6.md
-6. limitations.md
+5. recovery-daemon-operating-model.md
+6. conversation-ownership-and-tool-recovery-wiring.md
+7. api-waf-rate-limiting-and-pii-redaction.md
+8. code-audit-v0.2.0.md
+9. limitations.md
 ```
 
-- [Code audit v0.1.7](code-audit-v0.1.7.md)

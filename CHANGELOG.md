@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0 - API WAF and PII redaction hardening
+
+- Added API Gateway HTTP API stage throttling variables for burst and steady-state request limits.
+- Added AWS WAFv2 WebACL attachment for the public API stage.
+- Added WAF source-IP rate-based blocking, AWS managed common rule set, AWS known bad inputs rule set, and optional country block configuration.
+- Added deterministic local `RedactionService` for PII/secrets redaction before persistence.
+- ConversationStore now redacts user, assistant, tool-summary, approval-status, and system-status messages before DynamoDB/S3 transcript storage.
+- AuditLogger now redacts audit event messages and attributes before hash-chain computation and persistence.
+- Added non-sensitive PII finding labels/fingerprints to support correlation without storing raw values.
+- Added tests for redaction and Terraform WAF/throttling configuration.
+- Expanded local validation from 57 to 61 tests.
+- Added dedicated documentation for API WAF, rate limiting, and PII redaction.
+
 ## v0.1.7 - conversation ownership and tool recovery wiring
 
 - Fixed same-tenant conversation resume ownership: an authenticated user can no longer append to another user's conversation by guessing or reusing `conversation_id`.
@@ -10,6 +23,7 @@
 - Added safe conversation transcript summaries for tool results and approval status updates.
 - Added regression tests proving conversation ownership and real tool status transitions.
 - Expanded local validation from 54 to 57 tests.
+- Added dedicated documentation for conversation ownership and real tool recovery wiring.
 
 ## v0.1.6-docs-refactor - documentation consistency pass
 

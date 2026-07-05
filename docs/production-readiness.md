@@ -232,3 +232,25 @@ Safe claim:
 ```text
 Maci is a locally verified AWS-native control-plane foundation for governed AI agent execution.
 ```
+
+---
+
+## v0.1.7 production gate additions
+
+Before promoting v0.1.7-style conversation/recovery changes, verify the following gates:
+
+```text
+Conversation resume is owner-checked within the tenant.
+Request body conversation_id cannot override trusted conversation context.
+Real tool handlers persist durable workflow states.
+Recovery daemon sees real workflow states, not only synthetic test records.
+Ticket creation uses idempotency on retry.
+Account credit cannot execute before approval.
+Account credit cannot execute twice after retry/recovery.
+WAITING_FOR_APPROVAL is classified as human-review territory, not safe auto-resume.
+CREDIT_EXECUTED is terminal or do-not-resume.
+All allow and deny paths are auditable.
+```
+
+These checks should run in local tests and again as AWS dev smoke tests after deployment.
+
