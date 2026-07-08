@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -56,6 +57,8 @@ circuit_breaker = TenantCircuitBreaker(
 )
 conversation_store = ConversationStore()
 workflow_state_store = WorkflowStateStore()
+
+logger = logging.getLogger("maci.request_router")
 
 
 def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -346,7 +349,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.FAILED_SAFE, last_error=exc.result.reason)
         return _response(400, {"error": "guardrail_intervened", "reason": exc.result.reason, "conversation_id": conversation.conversation_id})
 
-    circuit_breaker.record_success(tenant_context.tenant_id, FailureCategory.BEDROCK_THROTTLED)
+    circuit_breaker.record_success_path(tenant_context.tenant_id)
 
     cost = cost_estimator.estimate_usage_cost(model_id, input_tokens, output_tokens)
     usage_ledger.record(
@@ -453,6 +456,7 @@ def _start_sync_workflow(state_machine_arn: str, workflow_request: WorkflowInvoc
             return {"ok": False, "error": "invalid_workflow_output", "raw": parsed}
         return parsed
     except Exception as exc:
+        logger.exception("synchronous workflow invocation failed for %s", workflow_request.request_id)
         return {"ok": False, "error": "workflow_invocation_failed", "details": str(exc)}
 
 

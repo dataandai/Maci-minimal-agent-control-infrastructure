@@ -22,6 +22,18 @@ class FailureCategory(str, Enum):
     UNKNOWN = "unknown"
 
 
+# Categories a fully successful request demonstrably clears. Policy-allowlist
+# denials (tool/model/KB) are excluded — see TenantCircuitBreaker.record_success_path.
+_SUCCESS_RESETTABLE_CATEGORIES = (
+    FailureCategory.SCHEMA_VALIDATION_FAILED,
+    FailureCategory.GUARDRAIL_INTERVENED,
+    FailureCategory.TENANT_BUDGET_EXCEEDED,
+    FailureCategory.BEDROCK_THROTTLED,
+    FailureCategory.LAMBDA_TOOL_TIMEOUT,
+    FailureCategory.UNKNOWN,
+)
+
+
 @dataclass
 class CircuitBreaker:
     """Simple in-memory circuit breaker for local validation and examples.
@@ -88,6 +100,20 @@ class TenantCircuitBreaker:
         else:
             self.counts[key] = 0
         self.open_categories.discard(key)
+
+    def record_success_path(self, tenant_id: str) -> None:
+        """Reset every failure category a fully successful request proves healthy.
+
+        A request that completed end-to-end passed schema validation, guardrails,
+        the tenant budget check and the model invocation, so leaving any of those
+        categories open until TTL would keep tripping the breaker for a tenant
+        that has demonstrably recovered. Policy-allowlist denials (tool/model/KB)
+        are intentionally not reset here: a success may not exercise the denied
+        resource, so their own TTL governs recovery.
+        """
+
+        for category in _SUCCESS_RESETTABLE_CATEGORIES:
+            self.record_success(tenant_id, category)
 
     def is_open(self, tenant_id: str, category: FailureCategory | None = None) -> bool:
         if self.table is not None and category is not None:

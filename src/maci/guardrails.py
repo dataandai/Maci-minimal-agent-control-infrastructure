@@ -1,11 +1,43 @@
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import Field
 
 from .schemas import StrictModel, TenantContext
+
+# Common homoglyphs (Cyrillic/Greek lookalikes) folded to their Latin form so a
+# visually-identical injection cannot slip past the substring filter.
+_HOMOGLYPHS = str.maketrans(
+    {
+        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s",
+        "α": "a", "ε": "e", "ο": "o", "ρ": "p", "ι": "i", "ν": "v",
+    }
+)
+# Leetspeak folded to letters so "1gn0re" collapses to "ignore".
+_LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"})
+_ZERO_WIDTH = re.compile(r"[​‌‍⁠﻿]")
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _normalized_variants(text: str) -> tuple[str, str, str]:
+    """Return matching surfaces resistant to common obfuscation.
+
+    1. ``norm``: NFKD-folded, zero-width-stripped, homoglyph-folded, lowercased.
+       Preserves spacing so existing phrase substrings still match.
+    2. ``compact``: ``norm`` with every non-alphanumeric character removed, so
+       spaced-out / punctuation-interleaved injections ("i g n o r e") collapse.
+    3. ``leet``: ``compact`` with leetspeak folded to letters.
+    """
+
+    folded = unicodedata.normalize("NFKD", text)
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    folded = _ZERO_WIDTH.sub("", folded).translate(_HOMOGLYPHS).lower()
+    compact = _NON_ALNUM.sub("", folded)
+    return folded, compact, compact.translate(_LEET)
 
 
 class GuardrailCheckResult(StrictModel):
@@ -90,8 +122,12 @@ class GuardrailChecker:
         guardrail_identifier: str | None = None,
         guardrail_version: str | None = None,
     ) -> GuardrailCheckResult:
-        lowered = text.lower()
-        findings = tuple(phrase for phrase in self.suspicious_phrases if phrase in lowered)
+        norm, compact, leet = _normalized_variants(text)
+        findings = tuple(
+            phrase
+            for phrase in self.suspicious_phrases
+            if phrase in norm or _phrase_matches(phrase, compact, leet)
+        )
         if findings:
             return GuardrailCheckResult(step=step, action="intervened", reason="prompt injection / policy bypass pattern detected", findings=findings)
 
@@ -159,6 +195,15 @@ class GuardrailChecker:
         if result.action == "intervened":
             raise GuardrailIntervention(result)
         return result
+
+
+def _phrase_matches(phrase: str, compact: str, leet: str) -> bool:
+    phrase_compact = _NON_ALNUM.sub("", phrase)
+    if len(phrase_compact) < 6:
+        # Too short to compact-match without risking false positives; the spaced
+        # ``norm`` pass already covers it.
+        return False
+    return phrase_compact in compact or phrase_compact in leet
 
 
 def _json_safe(value: Any) -> Any:

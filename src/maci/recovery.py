@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,8 @@ from uuid import uuid4
 from pydantic import Field
 
 from .schemas import StrictModel, TenantContext
+
+logger = logging.getLogger("maci.recovery")
 
 
 class WorkflowStatus(str, Enum):
@@ -324,7 +327,10 @@ class WorkflowStateStore:
                     ReturnValues="ALL_NEW",
                 )
                 return WorkflowStateRecord.model_validate(_from_dynamodb_item(response["Attributes"]))
-            except Exception:
+            except Exception as exc:
+                # Usually a benign lease conflict (another worker holds it); a
+                # persistent DynamoDB error here would otherwise be invisible.
+                logger.debug("recovery lease not acquired for %s/%s: %s", record.tenant_id, record.workflow_id, exc)
                 return None
 
         current = self.memory.get((record.tenant_id, record.workflow_id))
@@ -548,6 +554,7 @@ class RecoveryDaemon:
         except Exception:
             # Recovery must not crash because transcript storage failed. The audit
             # path still records the decision when available.
+            logger.exception("recovery transcript status write failed for workflow %s", outcome.workflow_id)
             return
 
     def _emit_audit(self, outcome: RecoveryOutcome) -> None:
@@ -566,6 +573,7 @@ class RecoveryDaemon:
                 )
             )
         except Exception:
+            logger.exception("recovery audit emit failed for workflow %s", outcome.workflow_id)
             return
 
 

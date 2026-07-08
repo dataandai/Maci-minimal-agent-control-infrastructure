@@ -38,9 +38,21 @@ jobs:
         run: terraform -chdir=infra/terraform init -backend=false
       - name: Terraform validate
         run: terraform -chdir=infra/terraform validate
-      - name: Terraform security scan
+      - name: Terraform security scan (Checkov)
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: infra/terraform
           quiet: true
           soft_fail: false
+      - name: Terraform security scan (tfsec)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/terraform
+      - name: Install conftest
+        run: |
+          CONFTEST_VERSION=0.56.0
+          curl -fsSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" -o conftest.tar.gz
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/conftest
+      - name: Policy gate on production tfvars (Conftest/OPA)
+        run: conftest test infra/terraform/environments/prod/terraform.tfvars --parser hcl2 --policy policy
