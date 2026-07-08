@@ -32,12 +32,9 @@ class ResourceOwnershipStore:
         self.table_name = table_name or os.getenv("RESOURCE_OWNERSHIP_TABLE_NAME")
         self._table = None
         if self.table_name:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self._table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self._table = None
+            self._table = dynamodb_table(self.table_name)
 
     def get_owner(self, resource_id: str) -> ResourceOwnerRecord | None:
         if self._table is not None:

@@ -1,6 +1,7 @@
 module "dynamodb" {
   source      = "./modules/dynamodb"
   name_prefix = local.name_prefix
+  kms_key_arn = aws_kms_key.data.arn
   tags        = local.tags
 }
 
@@ -8,6 +9,9 @@ module "audit_archive" {
   source                     = "./modules/audit_archive"
   name_prefix                = local.name_prefix
   object_lock_retention_days = var.audit_archive_retention_days
+  object_lock_mode           = var.audit_archive_object_lock_mode
+  kms_key_arn                = aws_kms_key.data.arn
+  log_bucket_id              = aws_s3_bucket.access_logs.id
   tags                       = local.tags
 }
 
@@ -37,32 +41,142 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "conversation_tran
   bucket = aws_s3_bucket.conversation_transcripts.id
   rule {
     apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.data.arn
+    }
+    bucket_key_enabled = true
+  }
+}
+
+# Deny any non-TLS access to transcripts, which may contain customer PII.
+resource "aws_s3_bucket_policy" "conversation_transcripts" {
+  bucket = aws_s3_bucket.conversation_transcripts.id
+  policy = data.aws_iam_policy_document.conversation_transcripts_tls.json
+}
+
+data "aws_iam_policy_document" "conversation_transcripts_tls" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.conversation_transcripts.arn,
+      "${aws_s3_bucket.conversation_transcripts.arn}/*"
+    ]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+# Server access logging for the transcript bucket.
+resource "aws_s3_bucket" "access_logs" {
+  bucket        = "${local.name_prefix}-access-logs-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  force_destroy = var.environment == "dev"
+  tags          = merge(local.tags, { DataClass = "access-logs" })
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
   }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    id     = "expire-access-logs"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = var.log_retention_days
+    }
+  }
+}
+
+data "aws_iam_policy_document" "access_logs" {
+  statement {
+    sid     = "AllowS3ServerAccessLogging"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+    resources = ["${aws_s3_bucket.access_logs.arn}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.access_logs.arn, "${aws_s3_bucket.access_logs.arn}/*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  policy = data.aws_iam_policy_document.access_logs.json
+}
+
+resource "aws_s3_bucket_logging" "conversation_transcripts" {
+  bucket        = aws_s3_bucket.conversation_transcripts.id
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "conversation-transcripts/"
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "conversation_transcripts" {
   bucket = aws_s3_bucket.conversation_transcripts.id
 
   rule {
-    id     = "expire-dev-conversation-transcripts"
+    id     = "expire-conversation-transcripts"
     status = "Enabled"
 
-    filter {
-      prefix = ""
-    }
+    filter {}
 
     expiration {
-      days = 90
+      days = var.conversation_transcript_retention_days
     }
   }
 }
 
 module "auth" {
-  source      = "./modules/auth"
-  name_prefix = local.name_prefix
-  tags        = local.tags
+  source                 = "./modules/auth"
+  name_prefix            = local.name_prefix
+  mfa_configuration      = var.cognito_mfa_configuration
+  advanced_security_mode = var.cognito_advanced_security_mode
+  tags                   = local.tags
 }
 
 module "customer_lookup" {
@@ -89,7 +203,7 @@ module "customer_lookup" {
     {
       Sid      = "WriteAuditEvents"
       Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Action   = local.dynamodb_audit_append_actions
       Resource = [module.dynamodb.audit_table_arn]
     }
   ]
@@ -119,7 +233,7 @@ module "ticket_creation" {
     {
       Sid      = "WriteAuditEvents"
       Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Action   = local.dynamodb_audit_append_actions
       Resource = [module.dynamodb.audit_table_arn]
     },
     {
@@ -156,7 +270,7 @@ module "billing_check" {
     {
       Sid      = "WriteAuditEvents"
       Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Action   = local.dynamodb_audit_append_actions
       Resource = [module.dynamodb.audit_table_arn]
     }
   ]
@@ -198,7 +312,7 @@ module "account_credit" {
     {
       Sid      = "WriteAuditEvents"
       Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Action   = local.dynamodb_audit_append_actions
       Resource = [module.dynamodb.audit_table_arn]
     }
   ]
@@ -228,7 +342,7 @@ module "approval_review" {
     {
       Sid      = "WriteAuditEvents"
       Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Action   = local.dynamodb_audit_append_actions
       Resource = [module.dynamodb.audit_table_arn]
     }
   ]
@@ -328,7 +442,6 @@ module "request_router" {
         Effect   = "Allow"
         Action   = local.dynamodb_crud_actions
         Resource = [
-          module.dynamodb.audit_table_arn,
           module.dynamodb.policy_table_arn,
           module.dynamodb.usage_table_arn,
           module.dynamodb.circuit_breaker_table_arn,
@@ -342,6 +455,12 @@ module "request_router" {
           module.dynamodb.workflow_state_table_arn,
           module.dynamodb.idempotency_table_arn
         ]
+      },
+      {
+        Sid      = "AppendAuditEvents"
+        Effect   = "Allow"
+        Action   = local.dynamodb_audit_append_actions
+        Resource = [module.dynamodb.audit_table_arn]
       },
       {
         Sid      = "WriteImmutableAuditArchive"
@@ -416,9 +535,14 @@ module "recovery_daemon" {
       Resource = [
         module.dynamodb.workflow_state_table_arn,
         module.dynamodb.conversation_table_arn,
-        module.dynamodb.audit_table_arn,
         module.dynamodb.idempotency_table_arn
       ]
+    },
+    {
+      Sid      = "AppendAuditEvents"
+      Effect   = "Allow"
+      Action   = local.dynamodb_audit_append_actions
+      Resource = [module.dynamodb.audit_table_arn]
     },
     {
       Sid      = "WriteConversationRecoveryStatus"
@@ -472,11 +596,16 @@ module "admin" {
       Effect   = "Allow"
       Action   = local.dynamodb_crud_actions
       Resource = [
-        module.dynamodb.audit_table_arn,
         module.dynamodb.agent_registry_table_arn,
         module.dynamodb.resource_ownership_table_arn,
         module.dynamodb.kill_switch_table_arn
       ]
+    },
+    {
+      Sid      = "AppendAuditEvents"
+      Effect   = "Allow"
+      Action   = local.dynamodb_audit_append_actions
+      Resource = [module.dynamodb.audit_table_arn]
     }
   ]
 }

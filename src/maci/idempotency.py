@@ -22,12 +22,9 @@ class TicketStore:
     def __post_init__(self) -> None:
         self.table_name = self.table_name or os.getenv("TICKET_TABLE_NAME")
         if self.table_name and self.table is None:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self.table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self.table = None
+            self.table = dynamodb_table(self.table_name)
 
     def create_or_get(self, *, tenant_id: str, ticket_key: str, ticket_id: str, payload: dict[str, Any]) -> tuple[str, bool]:
         now = datetime.now(timezone.utc).isoformat()
@@ -79,12 +76,9 @@ class OperationIdempotencyStore:
     def __post_init__(self) -> None:
         self.table_name = self.table_name or os.getenv("IDEMPOTENCY_TABLE_NAME")
         if self.table_name and self.table is None:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self.table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self.table = None
+            self.table = dynamodb_table(self.table_name)
 
     def begin_or_get(self, *, tenant_id: str, idempotency_key: str, payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         payload_hash = deterministic_payload_hash(payload)

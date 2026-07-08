@@ -2,14 +2,19 @@ environment = "prod"
 aws_region  = "eu-west-1"
 owner       = "platform"
 
-enable_real_bedrock  = true
-enable_bedrock_agent = false
+enable_real_bedrock          = true
+enable_real_guardrail_checks = true
+enable_bedrock_agent         = false
 
 monthly_cost_alarm_usd = 500
 lambda_build_python = "python3.12"
 log_retention_days     = 90
 
 cors_allowed_origins = ["https://app.example.com"]
+
+# Identity hardening for a governed/fintech-style deployment.
+cognito_mfa_configuration      = "ON"
+cognito_advanced_security_mode = "ENFORCED"
 
 # Production should use concrete tenant KB ARNs, not the default wildcard fallback.
 allowed_knowledge_base_arns = [
@@ -22,6 +27,13 @@ alarm_actions = []
 require_agent_id = true
 require_resource_ownership = true
 allow_dev_knowledge_base_wildcard = false
+
+# Immutable audit archive: COMPLIANCE mode cannot be shortened or bypassed, even by root.
+audit_archive_object_lock_mode = "COMPLIANCE"
+audit_archive_retention_days   = 365
+
+# Conversation transcript retention is a deliberate data-retention decision.
+conversation_transcript_retention_days = 365
 allowed_bedrock_agent_source_arns = [
   # "arn:aws:bedrock:eu-west-1:123456789012:agent/AGENTID"
 ]

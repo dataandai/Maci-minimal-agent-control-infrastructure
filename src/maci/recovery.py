@@ -118,6 +118,47 @@ _TERMINAL_STATES = {
     WorkflowStatus.ESCALATED_TO_HUMAN,
 }
 
+_ACTIVE_PARTITION = "active"
+_TERMINAL_PARTITION = "terminal"
+
+
+def _recovery_shard_count() -> int:
+    try:
+        return max(1, int(os.getenv("RECOVERY_ACTIVE_SHARDS", "8")))
+    except ValueError:
+        return 8
+
+
+def _active_partition_for(workflow_id: str) -> str:
+    """Spread active workflows across N GSI partitions to avoid a hot partition.
+
+    A single constant partition key value ("active") funnels every active
+    workflow onto one physical GSI partition, which throttles at scale. Hashing
+    the workflow id into a bounded set of shard keys keeps scans cheap while
+    distributing write/read load.
+    """
+
+    shards = _recovery_shard_count()
+    if shards <= 1:
+        return _ACTIVE_PARTITION
+    import hashlib
+
+    bucket = int(hashlib.sha256(workflow_id.encode("utf-8")).hexdigest(), 16) % shards
+    return f"{_ACTIVE_PARTITION}#{bucket}"
+
+
+def _active_partitions() -> tuple[str, ...]:
+    shards = _recovery_shard_count()
+    if shards <= 1:
+        return (_ACTIVE_PARTITION,)
+    # Include the bare "active" value so records written before sharding was
+    # enabled are still discovered by the recovery daemon.
+    return (_ACTIVE_PARTITION, *(f"{_ACTIVE_PARTITION}#{i}" for i in range(shards)))
+
+
+def _is_active_partition(partition: str) -> bool:
+    return partition == _ACTIVE_PARTITION or partition.startswith(f"{_ACTIVE_PARTITION}#")
+
 
 @dataclass
 class WorkflowStateStore:
@@ -145,12 +186,9 @@ class WorkflowStateStore:
     def __post_init__(self) -> None:
         self.table_name = self.table_name or os.getenv("WORKFLOW_STATE_TABLE_NAME")
         if self.table_name and self.table is None:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self.table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self.table = None
+            self.table = dynamodb_table(self.table_name)
 
     def transition(
         self,
@@ -182,7 +220,7 @@ class WorkflowStateStore:
             idempotency_key=idempotency_key if idempotency_key is not None else (existing.idempotency_key if existing else None),
             last_error=last_error,
             metadata={**(existing.metadata if existing else {}), **(metadata or {})},
-            recovery_partition="terminal" if terminal else "active",
+            recovery_partition=_TERMINAL_PARTITION if terminal else _active_partition_for(workflow_id),
             recovery_due_at_epoch=0 if terminal else int((now + timedelta(seconds=self.recovery_grace_seconds)).timestamp()),
             recovery_owner=None,
             recovery_lease_until=None,
@@ -228,22 +266,24 @@ class WorkflowStateStore:
         tenant_set = set(tenant_ids or [])
 
         if self.table is not None:
-            try:
-                from boto3.dynamodb.conditions import Key  # type: ignore
+            items: list[Any] = []
+            for partition in _active_partitions():
+                try:
+                    from boto3.dynamodb.conditions import Key  # type: ignore
 
-                response = self.table.query(  # type: ignore[attr-defined]
-                    IndexName="recovery_due_index",
-                    KeyConditionExpression=Key("recovery_partition").eq("active") & Key("recovery_due_at_epoch").lte(due_epoch),
-                    Limit=limit,
-                )
-                items = response.get("Items", [])
-            except Exception:
-                response = self.table.scan(  # type: ignore[attr-defined]
-                    FilterExpression="recovery_partition = :active AND recovery_due_at_epoch <= :due",
-                    ExpressionAttributeValues={":active": "active", ":due": due_epoch},
-                    Limit=limit,
-                )
-                items = response.get("Items", [])
+                    response = self.table.query(  # type: ignore[attr-defined]
+                        IndexName="recovery_due_index",
+                        KeyConditionExpression=Key("recovery_partition").eq(partition) & Key("recovery_due_at_epoch").lte(due_epoch),
+                        Limit=limit,
+                    )
+                    items.extend(response.get("Items", []))
+                except Exception:
+                    response = self.table.scan(  # type: ignore[attr-defined]
+                        FilterExpression="recovery_partition = :active AND recovery_due_at_epoch <= :due",
+                        ExpressionAttributeValues={":active": partition, ":due": due_epoch},
+                        Limit=limit,
+                    )
+                    items.extend(response.get("Items", []))
             records = [WorkflowStateRecord.model_validate(_from_dynamodb_item(item)) for item in items]
         else:
             records = list(self.memory.values())
@@ -252,7 +292,7 @@ class WorkflowStateStore:
             record
             for record in records
             if record.status not in _TERMINAL_STATES
-            and record.recovery_partition == "active"
+            and _is_active_partition(record.recovery_partition)
             and record.recovery_due_at_epoch <= due_epoch
             and (not tenant_set or record.tenant_id in tenant_set)
             and _lease_expired(record, now)
@@ -278,7 +318,7 @@ class WorkflowStateStore:
                         ":zero": 0,
                         ":one": 1,
                         ":now_iso": now.isoformat(),
-                        ":active": "active",
+                        ":active": record.recovery_partition,
                         ":status": record.status.value,
                     },
                     ReturnValues="ALL_NEW",
@@ -288,7 +328,7 @@ class WorkflowStateStore:
                 return None
 
         current = self.memory.get((record.tenant_id, record.workflow_id))
-        if current is None or current.status != record.status or current.recovery_partition != "active" or not _lease_expired(current, now):
+        if current is None or current.status != record.status or not _is_active_partition(current.recovery_partition) or not _lease_expired(current, now):
             return None
         claimed = current.model_copy(
             update={

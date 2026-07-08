@@ -3,6 +3,19 @@ resource "aws_cognito_user_pool" "this" {
 
   auto_verified_attributes = ["email"]
 
+  mfa_configuration = var.mfa_configuration
+
+  dynamic "software_token_mfa_configuration" {
+    for_each = var.mfa_configuration == "OFF" ? [] : [1]
+    content {
+      enabled = true
+    }
+  }
+
+  user_pool_add_ons {
+    advanced_security_mode = var.advanced_security_mode
+  }
+
   schema {
     name                = "tenant_id"
     attribute_data_type = "String"
@@ -36,10 +49,13 @@ resource "aws_cognito_user_pool_client" "this" {
 
   generate_secret = false
 
+  # SRP keeps the password off the wire. ADMIN_USER_PASSWORD_AUTH is retained
+  # only for the admin-initiated dev token helper. Plain USER_PASSWORD_AUTH is
+  # intentionally removed so credentials are never sent directly by clients.
   explicit_auth_flows = [
     "ALLOW_ADMIN_USER_PASSWORD_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH",
-    "ALLOW_USER_PASSWORD_AUTH"
+    "ALLOW_USER_SRP_AUTH"
   ]
 
   read_attributes  = ["email", "custom:tenant_id"]

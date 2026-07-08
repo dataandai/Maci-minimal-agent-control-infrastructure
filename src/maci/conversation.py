@@ -84,16 +84,12 @@ class ConversationStore:
         self.table_name = self.table_name or os.getenv("CONVERSATION_TABLE_NAME")
         self.transcript_bucket = self.transcript_bucket or os.getenv("CONVERSATION_TRANSCRIPT_BUCKET")
         if (self.table_name or self.transcript_bucket) and (self.table is None and self.s3_client is None):
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table, s3_client
 
-                if self.table_name:
-                    self.table = boto3.resource("dynamodb").Table(self.table_name)
-                if self.transcript_bucket:
-                    self.s3_client = boto3.client("s3")
-            except Exception:
-                self.table = None
-                self.s3_client = None
+            if self.table_name:
+                self.table = dynamodb_table(self.table_name)
+            if self.transcript_bucket:
+                self.s3_client = s3_client()
 
     def start_or_resume(
         self,

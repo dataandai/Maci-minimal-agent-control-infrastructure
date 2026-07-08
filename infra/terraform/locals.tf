@@ -43,6 +43,7 @@ locals {
     REQUIRE_AGENT_ID               = tostring(var.require_agent_id)
     REQUIRE_RESOURCE_OWNERSHIP     = tostring(var.require_resource_ownership)
     ENABLE_REAL_BEDROCK        = tostring(var.enable_real_bedrock)
+    ENABLE_REAL_GUARDRAIL_CHECKS = tostring(var.enable_real_guardrail_checks)
     CIRCUIT_BREAKER_THRESHOLD  = tostring(var.circuit_breaker_threshold)
     CIRCUIT_BREAKER_OPEN_SECONDS = tostring(var.circuit_breaker_open_seconds)
     RECOVERY_STALE_SECONDS     = tostring(var.recovery_stale_seconds)
@@ -51,6 +52,7 @@ locals {
     RECOVERY_BACKOFF_SECONDS   = "60"
     RECOVERY_MAX_BACKOFF_SECONDS = "3600"
     RECOVERY_MAX_ITEMS         = tostring(var.recovery_max_items)
+    RECOVERY_ACTIVE_SHARDS     = tostring(var.recovery_active_shards)
     METRICS_NAMESPACE          = local.metrics_namespace
     ENABLE_PII_REDACTION       = tostring(var.enable_pii_redaction)
     PII_REDACTION_SALT         = var.pii_redaction_salt
@@ -75,6 +77,18 @@ locals {
     "dynamodb:DescribeTable",
     "dynamodb:GetItem",
     "dynamodb:Query"
+  ]
+
+  # Audit writers must be append-only. They may put new events, read/advance the
+  # per-tenant hash-chain head, and run the append transaction, but must never be
+  # able to delete or bulk-overwrite audit history. Deliberately excludes
+  # DeleteItem, BatchWriteItem and Scan.
+  dynamodb_audit_append_actions = [
+    "dynamodb:PutItem",
+    "dynamodb:UpdateItem",
+    "dynamodb:GetItem",
+    "dynamodb:ConditionCheckItem",
+    "dynamodb:DescribeTable"
   ]
 
   workflow_lambda_names = [

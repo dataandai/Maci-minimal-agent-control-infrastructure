@@ -35,12 +35,9 @@ def _dynamodb_table_from_env(env_name: str):
     table_name = os.getenv(env_name)
     if not table_name:
         return None
-    try:
-        import boto3  # type: ignore
+    from ._aws import dynamodb_table
 
-        return boto3.resource("dynamodb").Table(table_name)
-    except Exception:
-        return None
+    return dynamodb_table(table_name)
 
 
 audit_logger = AuditLogger()

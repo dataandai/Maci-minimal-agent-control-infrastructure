@@ -179,3 +179,25 @@ def test_approved_credit_cannot_be_reused_for_different_amount():
     denied = account_credit(tampered)
     assert denied["statusCode"] == 403
     assert "payload" in json.loads(denied["body"])["details"]
+
+
+def test_requester_cannot_approve_their_own_high_risk_request():
+    store = ApprovalStore()
+    ctx = TenantContext(tenant_id="tenant-acme", user_id="u-selfapprove", request_id="req-sod")
+    record = store.create_pending(
+        ctx,
+        tool_name=ToolName.ACCOUNT_CREDIT,
+        resource_id="cust-123",
+        action=ResourceAction.ISSUE_CREDIT,
+        risk_level=RiskLevel.HIGH,
+        payload={"customer_id": "cust-123", "amount_usd": 10.0},
+    )
+    try:
+        store.approve(ctx.tenant_id, record.approval_id, decided_by_user_id="u-selfapprove", reason="self approval attempt")
+    except PermissionError as exc:
+        assert "segregation of duties" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("requester must not be able to approve their own request")
+
+    approved = store.approve(ctx.tenant_id, record.approval_id, decided_by_user_id="u-different-approver", reason="ok")
+    assert approved.status.value == "approved"

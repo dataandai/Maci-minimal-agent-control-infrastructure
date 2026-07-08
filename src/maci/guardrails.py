@@ -68,13 +68,18 @@ class GuardrailChecker:
     def __init__(self, enable_real_checks: bool | None = None) -> None:
         self.enable_real_checks = enable_real_checks if enable_real_checks is not None else os.getenv("ENABLE_REAL_GUARDRAIL_CHECKS", "false").lower() == "true"
         self._client = None
+        self._client_error: Exception | None = None
         if self.enable_real_checks:
             try:
                 import boto3  # type: ignore
 
                 self._client = boto3.client("bedrock-runtime")
-            except Exception:
+            except Exception as exc:
+                # Do not silently degrade to substring-only checks. When real
+                # guardrail checks are required but the client cannot be built,
+                # every check must fail closed instead of quietly passing.
                 self._client = None
+                self._client_error = exc
 
     def check_text(
         self,
@@ -90,10 +95,14 @@ class GuardrailChecker:
         if findings:
             return GuardrailCheckResult(step=step, action="intervened", reason="prompt injection / policy bypass pattern detected", findings=findings)
 
-        # Real API shape is intentionally isolated because Bedrock guardrail APIs
-        # evolve. A failed real guardrail call should fail closed only when explicitly
-        # enabled in production.
-        if self.enable_real_checks and self._client is not None and guardrail_identifier and guardrail_version:
+        # When real guardrail checks are required, the managed API is the
+        # authoritative control. The local substring list is only a cheap
+        # first-pass filter and must never be the sole check in that mode.
+        if self.enable_real_checks:
+            if self._client is None:
+                return GuardrailCheckResult(step=step, action="intervened", reason=f"guardrail client unavailable, failing closed: {self._client_error}")
+            if not (guardrail_identifier and guardrail_version):
+                return GuardrailCheckResult(step=step, action="intervened", reason="guardrail identifier/version missing while real checks are required, failing closed")
             try:
                 response = self._client.apply_guardrail(
                     guardrailIdentifier=guardrail_identifier,

@@ -70,24 +70,14 @@ class AuditLogger:
         self._table = table
         self._s3 = None
         self._redactor = redactor or RedactionService()
-        if (self.table_name or self.archive_bucket) and self._table is None:
-            try:
-                import boto3  # type: ignore
+        if self._table is None and self.table_name:
+            from ._aws import dynamodb_table
 
-                if self.table_name:
-                    self._table = boto3.resource("dynamodb").Table(self.table_name)
-                if self.archive_bucket:
-                    self._s3 = boto3.client("s3")
-            except Exception:
-                self._table = None
-                self._s3 = None
-        elif self.archive_bucket:
-            try:
-                import boto3  # type: ignore
+            self._table = dynamodb_table(self.table_name)
+        if self._s3 is None and self.archive_bucket:
+            from ._aws import s3_client
 
-                self._s3 = boto3.client("s3")
-            except Exception:
-                self._s3 = None
+            self._s3 = s3_client()
 
     def emit(self, event: AuditEvent) -> None:
         event = self._redact_event(event)

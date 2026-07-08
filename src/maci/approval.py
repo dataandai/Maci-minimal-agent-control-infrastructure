@@ -33,12 +33,9 @@ class ApprovalStore:
         self.table_name = table_name or os.getenv("APPROVAL_TABLE_NAME")
         self._table = None
         if self.table_name:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self._table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self._table = None
+            self._table = dynamodb_table(self.table_name)
 
     def create_pending(
         self,
@@ -86,6 +83,11 @@ class ApprovalStore:
         record = self.get(tenant_id, approval_id)
         if record is None:
             raise ApprovalError("approval record not found")
+        # Segregation of duties: the person who requested a high-risk action must
+        # not be able to approve it themselves, even if they also hold an approver
+        # role. This is a hard control, not a UI convenience.
+        if record.requested_by_user_id and record.requested_by_user_id == decided_by_user_id:
+            raise ApprovalError("segregation of duties: requester cannot approve their own request")
         updated = record.model_copy(
             update={
                 "status": ApprovalStatus.APPROVED,

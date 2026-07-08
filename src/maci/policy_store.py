@@ -54,12 +54,9 @@ class PolicyStore:
         self.table_name = table_name or os.getenv("POLICY_TABLE_NAME")
         self._table = None
         if self.table_name:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                self._table = boto3.resource("dynamodb").Table(self.table_name)
-            except Exception:
-                self._table = None
+            self._table = dynamodb_table(self.table_name)
 
     def get_policy(self, tenant_id: str) -> TenantPolicy:
         if self._table is not None:

@@ -15,7 +15,8 @@ resource "aws_dynamodb_table" "audit" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -41,7 +42,8 @@ resource "aws_dynamodb_table" "policy" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -68,7 +70,8 @@ resource "aws_dynamodb_table" "usage" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -95,7 +98,8 @@ resource "aws_dynamodb_table" "circuit_breaker" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   ttl {
@@ -123,7 +127,8 @@ resource "aws_dynamodb_table" "ticket" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -144,7 +149,8 @@ resource "aws_dynamodb_table" "agent_registry" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -171,7 +177,8 @@ resource "aws_dynamodb_table" "approval" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -197,7 +204,8 @@ resource "aws_dynamodb_table" "resource_ownership" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -224,7 +232,8 @@ resource "aws_dynamodb_table" "kill_switch" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -245,7 +254,8 @@ resource "aws_dynamodb_table" "mcp_registry" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -272,7 +282,8 @@ resource "aws_dynamodb_table" "conversation" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -321,7 +332,8 @@ resource "aws_dynamodb_table" "workflow_state" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {
@@ -353,7 +365,8 @@ resource "aws_dynamodb_table" "idempotency" {
   }
 
   server_side_encryption {
-    enabled = true
+    enabled     = true
+    kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
   point_in_time_recovery {

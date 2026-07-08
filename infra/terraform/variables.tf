@@ -33,6 +33,12 @@ variable "enable_real_bedrock" {
   default     = false
 }
 
+variable "enable_real_guardrail_checks" {
+  description = "When true, the guardrail boundary calls the Bedrock ApplyGuardrail API and fails closed if it is unavailable. The local substring filter is only a first-pass check and is never authoritative on its own. Keep aligned with enable_real_bedrock in staging/prod."
+  type        = bool
+  default     = false
+}
+
 variable "enable_bedrock_agent" {
   description = "When true, the router invokes an existing Bedrock Agent alias using bedrock_agent_id and bedrock_agent_alias_id."
   type        = bool
@@ -122,6 +128,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "conversation_transcript_retention_days" {
+  description = "Retention period for conversation transcripts. Set per environment according to the data-retention policy; this is a deliberate control, not a dev-only cleanup."
+  type        = number
+  default     = 90
+}
+
 variable "monthly_cost_alarm_usd" {
   description = "Estimated custom metric cost alarm threshold for the control-plane ledger."
   type        = number
@@ -135,9 +147,21 @@ variable "alarm_actions" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Allowed origins for API Gateway CORS. Tighten this in staging/prod."
+  description = "Allowed origins for API Gateway CORS. Must be an explicit origin list; wildcard is only acceptable for a throwaway dev lab."
   type        = list(string)
-  default     = ["*"]
+  default     = []
+}
+
+variable "cognito_mfa_configuration" {
+  description = "Cognito MFA mode: OFF, OPTIONAL or ON. Prod should use ON."
+  type        = string
+  default     = "OPTIONAL"
+}
+
+variable "cognito_advanced_security_mode" {
+  description = "Cognito advanced security mode: OFF, AUDIT or ENFORCED. Prod should use ENFORCED (per-MAU cost applies)."
+  type        = string
+  default     = "OFF"
 }
 
 variable "require_agent_id" {
@@ -159,9 +183,15 @@ variable "allow_dev_knowledge_base_wildcard" {
 }
 
 variable "audit_archive_retention_days" {
-  description = "Default Object Lock governance retention period for immutable audit archive objects."
+  description = "Default Object Lock retention period for immutable audit archive objects."
   type        = number
   default     = 30
+}
+
+variable "audit_archive_object_lock_mode" {
+  description = "S3 Object Lock mode for the audit archive. COMPLIANCE makes objects immutable even for the root account; use it in production. GOVERNANCE is for dev/lab only."
+  type        = string
+  default     = "GOVERNANCE"
 }
 
 
@@ -193,6 +223,12 @@ variable "recovery_max_attempts" {
   description = "Maximum recovery attempts before a stale workflow is escalated to human review."
   type        = number
   default     = 3
+}
+
+variable "recovery_active_shards" {
+  description = "Number of shard keys spreading active workflows across the recovery GSI to avoid a hot partition. Increase for high active-workflow volume."
+  type        = number
+  default     = 8
 }
 
 

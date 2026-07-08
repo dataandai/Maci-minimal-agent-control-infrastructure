@@ -87,17 +87,12 @@ class UsageLedger:
         self._usage_table = None
         self._policy_table = None
         if self.usage_table_name or self.policy_table_name:
-            try:
-                import boto3  # type: ignore
+            from ._aws import dynamodb_table
 
-                dynamodb = boto3.resource("dynamodb")
-                if self.usage_table_name:
-                    self._usage_table = dynamodb.Table(self.usage_table_name)
-                if self.policy_table_name:
-                    self._policy_table = dynamodb.Table(self.policy_table_name)
-            except Exception:
-                self._usage_table = None
-                self._policy_table = None
+            if self.usage_table_name:
+                self._usage_table = dynamodb_table(self.usage_table_name)
+            if self.policy_table_name:
+                self._policy_table = dynamodb_table(self.policy_table_name)
 
     def record(self, event: UsageLedgerEvent) -> None:
         if self._usage_table is not None:
