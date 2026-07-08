@@ -45,7 +45,7 @@ def test_router_persists_conversation_and_workflow_state():
                 "user_id": "u-1",
                 "task_type": TaskType.SUPPORT_ANSWER,
                 "input": "How do I reset SSO settings?",
-                "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                "requested_model": "anthropic.claude-sonnet-5",
                 "conversation_id": "conv-router-test",
             }
         )

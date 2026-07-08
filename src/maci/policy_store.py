@@ -10,7 +10,7 @@ from .schemas import ResourceAction, TenantPolicy
 DEMO_POLICIES: dict[str, TenantPolicy] = {
     "tenant-acme": TenantPolicy(
         tenant_id="tenant-acme",
-        allowed_models=("anthropic.claude-3-5-sonnet-20241022-v2:0", "amazon.nova-pro-v1:0"),
+        allowed_models=("anthropic.claude-sonnet-5", "amazon.nova-pro-v1:0"),
         allowed_knowledge_base_ids=("kb-acme-support",),
         allowed_tools=("customer_lookup", "ticket_creation", "billing_check", "account_credit"),
         max_input_chars=12000,

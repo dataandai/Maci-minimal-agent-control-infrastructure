@@ -73,7 +73,7 @@ variable "allowed_foundation_model_ids" {
   description = "Foundation model IDs allowed for direct Bedrock invocation. IDs are converted to foundation-model ARNs."
   type        = list(string)
   default = [
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "anthropic.claude-sonnet-5",
     "amazon.nova-pro-v1:0",
     "amazon.nova-lite-v1:0"
   ]

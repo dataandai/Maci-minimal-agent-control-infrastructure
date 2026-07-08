@@ -18,7 +18,7 @@ def main() -> None:
     body = {
         "task_type": "support_answer",
         "input": "How can I reset SSO settings?",
-        "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "requested_model": "anthropic.claude-sonnet-5",
     }
     if args.include_identity_echo:
         body["tenant_id"] = args.tenant_id

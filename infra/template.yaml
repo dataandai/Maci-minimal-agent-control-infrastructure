@@ -24,7 +24,7 @@ Parameters:
     Description: Creates an AWS::Bedrock::Agent and AgentAlias. Keep false if your account/region cannot create Bedrock Agents yet.
   AgentFoundationModel:
     Type: String
-    Default: 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+    Default: 'anthropic.claude-sonnet-5'
     Description: Foundation model ID or ARN for Bedrock Agent orchestration.
   RequestRouterReservedConcurrency:
     Type: Number
@@ -185,7 +185,7 @@ Resources:
                 - bedrock:Converse
                 - bedrock:ConverseStream
               Resource:
-                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-sonnet-5'
                 - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
                 - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
             - Sid: RetrieveFromTenantKnowledgeBasesOnly
@@ -287,7 +287,7 @@ Resources:
                 - bedrock:InvokeModel
                 - bedrock:Converse
               Resource:
-                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-sonnet-5'
                 - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
                 - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
 
@@ -354,7 +354,7 @@ Resources:
                 Action:
                   - bedrock:InvokeModel
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0'
+                  - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/anthropic.claude-sonnet-5'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-pro-v1:0'
                   - !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
 

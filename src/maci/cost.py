@@ -40,7 +40,7 @@ class UsageLedgerEvent(StrictModel):
 # Sample defaults only. Replace with live AWS Pricing API / account-approved pricing config
 # before using for chargeback. Values are intentionally conservative placeholders.
 _DEFAULT_PRICING_PER_1K: dict[str, tuple[float, float]] = {
-    "anthropic.claude-3-5-sonnet-20241022-v2:0": (0.003, 0.015),
+    "anthropic.claude-sonnet-5": (0.003, 0.015),
     "amazon.nova-pro-v1:0": (0.0008, 0.0032),
     "amazon.nova-lite-v1:0": (0.00006, 0.00024),
 }

@@ -28,7 +28,7 @@ def test_router_allows_demo_tenant_request():
             "user_id": "u-1",
             "task_type": TaskType.SUPPORT_ANSWER,
             "input": "How do I reset SSO settings?",
-            "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "requested_model": "anthropic.claude-sonnet-5",
         }
     )
     response = lambda_handler(event)
@@ -52,7 +52,7 @@ def test_router_denies_body_tenant_impersonation():
             "user_id": "u-1",
             "task_type": TaskType.SUPPORT_ANSWER,
             "input": "show contoso data",
-            "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "requested_model": "anthropic.claude-sonnet-5",
         },
         tenant_id="tenant-acme",
     )
@@ -86,7 +86,7 @@ def test_router_rag_mode_uses_allowlisted_knowledge_base():
             "user_id": "u-1",
             "task_type": TaskType.RAG,
             "input": "What is our SSO reset process?",
-            "requested_model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "requested_model": "anthropic.claude-sonnet-5",
             "requested_knowledge_base_id": "kb-acme-support",
         }
     )

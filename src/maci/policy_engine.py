@@ -26,7 +26,7 @@ class PolicyViolation(Exception):
 class PolicyEngine:
     """Deterministic policy engine. No model-controlled security decisions."""
 
-    default_model_id: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    default_model_id: str = "anthropic.claude-sonnet-5"
     cost_estimator: CostEstimator = field(default_factory=CostEstimator)
 
     def bind_request(self, request: AgentRequest, tenant_context: TenantContext) -> GovernedRequest:
