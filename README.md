@@ -1,4 +1,10 @@
-# AWS-Native Product-Readiness Use Case for Governed AI Agents
+# MACI — Minimal Agent Control Infrastructure
+
+**An AWS-native product-readiness use case for governed AI agents.**
+
+![tests](https://github.com/dataandai/Maci-minimal-agent-control-infrastructure/actions/workflows/tests.yml/badge.svg)
+![python](https://img.shields.io/badge/python-3.12-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 Most AI agent demos look simple.
 
@@ -8,11 +14,34 @@ That is enough for a proof of concept.
 
 It is not enough for a product environment.
 
-This repository demonstrates a concrete AWS-native use case showing what changes when an AI agent moves from a PoC into a product-like system that operates near real customer data, tenant boundaries, billing workflows, approvals, audit logs, recovery requirements, and operational controls.
+This repository demonstrates what changes when an AI agent moves from a PoC into a product-like system that operates near real customer data, tenant boundaries, billing workflows, approvals, audit logs, recovery requirements, and operational controls.
 
-The goal is not to claim that this is a universal agent platform.
+The goal is not to claim a universal agent platform.
 
 The goal is to make the product-readiness gap visible.
+
+MACI is also the public replica of control-plane patterns from private engagements in regulated environments. Where NDAs prevent showing the systems, this repository shows the engineering. The full case study, including design rationale and the regulatory mapping, lives at [dataandai.github.io](https://dataandai.github.io/#case-study).
+
+---
+
+## Sixty-Second Orientation
+
+* **85 automated tests, all green, no AWS credentials required.** Every cloud call sits behind a mockable gateway. Includes a dedicated red-team layer for prompt injection, poisoned context, malicious tool output, and approval-bypass attempts.
+* **Identity comes from the trust boundary, not the model.** Tenant context derives from validated JWT claims; a model asked to "act as tenant B" has no code path to do so.
+* **Fail-closed contracts everywhere.** Strict Pydantic schemas with `extra="forbid"` on every request and tool.
+* **Humans own the high-risk path.** Approval queue for money-moving actions; kill switches at global, tenant, agent, and tool scope; every agent has a revocable identity.
+* **Audit that survives an incident review.** Per-tenant hash-chained audit events (DynamoDB `TransactWriteItems` chain head), redaction of secrets and PII, optional immutable archive.
+* **Recovery is designed, not hoped for.** A recovery daemon with leasing and bounded retries resumes safe work and escalates ambiguous or high-risk state to humans.
+* **Terraform-first AWS deployment** with CI security gates: tests, type checks, Bandit, pip-audit, Checkov, red-team asset verification.
+
+The core rule of the whole system:
+
+```text
+The LLM proposes.
+The system enforces.
+```
+
+Or in one sentence: the model may remain probabilistic; the operational boundary around it must be deterministic.
 
 ---
 
@@ -38,47 +67,11 @@ In a product environment, the question becomes much harder:
 
 ```text
 Should this authenticated user, inside this tenant, through this agent,
-be allowed to perform this action, on this resource, right now —
+be allowed to perform this action, on this resource, right now,
 and can we audit, limit, recover, and explain it later?
 ```
 
 That is the problem this repository explores.
-
----
-
-## Why a PoC Agent Is Not Enough
-
-A basic PoC usually focuses on tool calling:
-
-```text
-LLM
-  ↓
-System prompt
-  ↓
-Tools
-  ↓
-Demo response
-```
-
-But once the agent is allowed to operate near real business systems, the surrounding infrastructure becomes the hard part.
-
-You need to know:
-
-* who the user really is;
-* which tenant they are acting for;
-* whether the customer record belongs to that tenant;
-* whether this agent can use this tool;
-* whether the operation is read-only or high-risk;
-* whether human approval is required;
-* whether the action already ran once;
-* whether the workflow can recover after failure;
-* whether PII is redacted before storage;
-* whether abusive traffic is rate-limited;
-* whether every important decision can be audited later.
-
-The LLM can remain probabilistic.
-
-The execution boundary around it cannot.
 
 ---
 
@@ -115,6 +108,8 @@ Different agent systems will need different policies, tools, compliance rules, r
 ---
 
 ## High-Level Architecture
+
+![MACI deterministic agent execution](maci_agents.png)
 
 At a high level, the system looks like this:
 
@@ -156,6 +151,10 @@ The model can request actions.
 
 The system decides whether those actions are allowed.
 
+The full AWS production architecture, including WAF, redaction, and the recovery daemon:
+
+![MACI AWS production architecture](maci_aws.png)
+
 ---
 
 ## Core Runtime Flow
@@ -180,13 +179,6 @@ A normal support workflow follows this pattern:
 15. Final response is validated.
 16. Conversation transcript is stored.
 17. Audit, usage, trace, and recovery state are written.
-```
-
-The important point:
-
-```text
-The LLM proposes.
-The system enforces.
 ```
 
 ---
@@ -260,7 +252,7 @@ These are not the same thing.
 
 Conversation history is for product experience and support continuity.
 
-Audit trail is for accountability, security, and incident review.
+Audit trail is for accountability, security, and incident review. Audit events are hash-chained per tenant, so a removed or altered event breaks the chain and becomes detectable.
 
 ---
 
@@ -286,7 +278,9 @@ Should it go to human review?
 
 The recovery daemon does not execute high-risk business actions by itself.
 
-It classifies workflows, claims them through a lease, applies bounded retry/backoff, and either resumes safe work or escalates ambiguous/high-risk states.
+It classifies workflows, claims them through a lease, applies bounded retry/backoff, and either resumes safe work or escalates ambiguous or high-risk states.
+
+Known boundary: recovery covers MACI-owned workflow and conversation state. Cross-system compensation of half-completed transactions in external backends (CRM, billing, ticketing) remains an integration decision for the deployer. This is stated in [docs/limitations.md](docs/limitations.md) rather than hidden.
 
 ---
 
@@ -308,9 +302,9 @@ The local red-team suite is deterministic and CI-friendly.
 
 It can also be extended with exported public benchmark samples and run against a live dev/staging HTTP endpoint.
 
-The goal is not to claim complete jailbreak immunity.
+The goal is not to claim complete jailbreak immunity. Injection resistance stays probabilistic.
 
-The goal is to test whether known adversarial text channels can bypass the application boundary.
+The goal is to test whether known adversarial text channels can bypass the application boundary, because that boundary is what limits the blast radius of a compromised agent: allowed tools only, own tenant only, within budget, with approval on the high-risk path.
 
 ---
 
@@ -341,15 +335,32 @@ This is important because cost and usage data should remain useful while secrets
 
 ---
 
+## Where This Maps to Regulation (Engineering View)
+
+The controls in this repository are the engineering counterparts of obligations that teams deploying agentic AI in the EU are asked about. This is an engineering interpretation, not legal advice. Compliance certification remains the deployer's responsibility.
+
+| Control | Where it lives | Obligation family |
+|---|---|---|
+| Hash-chained audit trail, redaction, archive | `audit.py`, `redaction.py` | Record-keeping and traceability (EU AI Act logging obligations) |
+| Human approval, agent custodianship, scoped kill switches | approval flow, `policy_engine.py` | Human oversight, ability to intervene and interrupt |
+| Threat model plus adversarial and red-team tests in CI | `docs/threat-model.md`, `tests/red_team/` | Risk management as living evidence |
+| Fail-closed schemas, per-step guardrails | `schemas`, guardrail layer | Accuracy, robustness, cybersecurity |
+| Tenant policy engine, resource ownership, isolation | `policy_engine.py`, `identity.py` | Data governance, GDPR-aware separation |
+| Usage ledger, budget caps, circuit breakers | cost and circuit modules | Operational resilience (DORA-style expectations) |
+
+If you are mapping a concrete deployment against article-level requirements, open an issue. Real-world mapping gaps drive the roadmap.
+
+---
+
 ## CI/CD Security Gates
 
 The repository includes CI checks for:
 
 * Python tests;
-* formatting/linting;
+* formatting and linting;
 * type checking;
 * Bandit security scan;
-* dependency audit;
+* dependency audit (pip-audit);
 * Terraform format and validation;
 * Checkov IaC scanning;
 * red-team asset verification.
@@ -393,19 +404,13 @@ pytest -q
 Expected current local validation target:
 
 ```text
-83 passed
+85 passed
 ```
 
 Run only red-team tests:
 
 ```bash
 pytest -q tests/red_team/
-```
-
-Run red-team asset verification:
-
-```bash
-python scripts/verify_redteam_assets.py
 ```
 
 ---
@@ -423,6 +428,8 @@ terraform -chdir=infra/terraform validate
 terraform -chdir=infra/terraform plan -var-file=environments/dev/terraform.tfvars
 terraform -chdir=infra/terraform apply -var-file=environments/dev/terraform.tfvars
 ```
+
+A guided walkthrough from empty AWS account to smoke-tested API lives in [docs/aws-first-deploy-lab.md](docs/aws-first-deploy-lab.md).
 
 Important:
 
@@ -475,7 +482,7 @@ Production environments should keep red-team overrides disabled.
 ```text
 src/maci/
   agent_tools/          Tool handlers
-  audit.py              Audit event writer and redaction integration
+  audit.py              Audit event writer, hash chain, redaction integration
   conversation.py       Conversation transcript and metadata logic
   identity.py           Trusted identity and tenant context
   policy_engine.py      Authorization and request binding
@@ -536,6 +543,20 @@ The remaining production steps include:
 * production-grade CI/CD promotion;
 * AWS disaster recovery decisions.
 
+The honest boundary conditions are collected in [docs/limitations.md](docs/limitations.md), the threat model in [docs/threat-model.md](docs/threat-model.md), and the change history in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Related Work
+
+MACI is one of three open reference implementations applying the same thesis at different layers:
+
+* **Agents:** MACI (this repository)
+* **Serving:** [AIBrix Tenant Gateway](https://github.com/dataandai/aibrix-tenant-gateway) — tenant policy gateway in front of AIBrix/vLLM
+* **Analytics:** [Governed Text-to-SQL Agent](https://github.com/dataandai/governed-text-to-sql-agent) — governed natural-language analytics over BigQuery
+
+Case studies for all three: [dataandai.github.io](https://dataandai.github.io/#case-study)
+
 ---
 
 ## What This Is Not
@@ -588,3 +609,6 @@ A PoC agent proves that the model can call a tool.
 
 A product-ready agentic system must prove that the model can only call the right tool, for the right user, in the right tenant, on the right resource, under policy, with audit, recovery, limits, and human control where needed.
 
+---
+
+MIT License. Built and maintained by [Adam Feldmann](https://dataandai.github.io) ([LinkedIn](https://linkedin.com/in/adam-feldmann)).
