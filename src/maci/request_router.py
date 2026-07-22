@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -204,7 +204,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     )
     workflow_state_store.transition(tenant_context, conversation_id=conversation.conversation_id, status=WorkflowStatus.POLICY_CHECKED)
 
-    mode = "direct"
+    mode: Literal["direct", "rag", "agent", "workflow"] = "direct"
     prompt = request.input
     retrieval_trace: dict[str, Any] = {}
     try:
@@ -299,7 +299,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
         input_tokens = int(workflow_result.get("input_tokens", max(1, len(prompt.split()))))
         output_tokens = int(workflow_result.get("output_tokens", max(1, len(answer.split()))))
         raw_trace = {"workflow": workflow_result}
-    elif use_agent:
+    elif use_agent and agent_id and agent_alias_id:
         mode = "agent"
         agent_response = bedrock_gateway.invoke_agent(
             BedrockAgentInvocationRequest(

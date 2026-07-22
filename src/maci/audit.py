@@ -129,14 +129,14 @@ class AuditLogger:
         """
         if not _supports_dynamodb_transaction(self._table):
             item = self._emit_local_chained(event)
-            self._table.put_item(Item=item)  # type: ignore[attr-defined]
+            self._table.put_item(Item=item)  # type: ignore[attr-defined, union-attr]
             return item
 
         tenant_id = event.tenant_id
         head_key = {"tenant_id": tenant_id, "event_id": _AUDIT_CHAIN_HEAD_EVENT_ID}
         last_error: Exception | None = None
         for _ in range(_MAX_CHAIN_RETRIES):
-            head_response = self._table.get_item(Key=head_key, ConsistentRead=True)  # type: ignore[attr-defined]
+            head_response = self._table.get_item(Key=head_key, ConsistentRead=True)  # type: ignore[attr-defined, union-attr]
             head = head_response.get("Item") or {}
             previous_hash = event.previous_event_hash or head.get("last_hash")
             previous_sequence = int(head.get("sequence_number", 0) or 0)

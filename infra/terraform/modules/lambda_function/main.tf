@@ -59,7 +59,7 @@ resource "null_resource" "package" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command = <<EOT
+    command     = <<EOT
 set -euo pipefail
 rm -rf "${local.build_dir}"
 mkdir -p "${local.build_dir}"

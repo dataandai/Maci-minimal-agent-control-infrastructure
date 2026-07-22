@@ -10,7 +10,7 @@ locals {
     ManagedBy   = "terraform"
   }
 
-  source_dir = abspath("${path.module}/../../src")
+  source_dir               = abspath("${path.module}/../../src")
   workflow_definition_path = abspath("${path.module}/../step-functions/agent_workflow.asl.json")
 
   allowed_model_arns = [
@@ -25,12 +25,12 @@ locals {
   effective_knowledge_base_arns = length(var.allowed_knowledge_base_arns) > 0 ? var.allowed_knowledge_base_arns : (var.allow_dev_knowledge_base_wildcard && var.environment == "dev" ? local.default_knowledge_base_arns : [])
 
   common_lambda_environment = {
-    AUDIT_TABLE_NAME           = module.dynamodb.audit_table_name
-    POLICY_TABLE_NAME          = module.dynamodb.policy_table_name
-    USAGE_TABLE_NAME           = module.dynamodb.usage_table_name
-    CIRCUIT_BREAKER_TABLE_NAME = module.dynamodb.circuit_breaker_table_name
-    TICKET_TABLE_NAME          = module.dynamodb.ticket_table_name
-    APPROVAL_TABLE_NAME        = module.dynamodb.approval_table_name
+    AUDIT_TABLE_NAME               = module.dynamodb.audit_table_name
+    POLICY_TABLE_NAME              = module.dynamodb.policy_table_name
+    USAGE_TABLE_NAME               = module.dynamodb.usage_table_name
+    CIRCUIT_BREAKER_TABLE_NAME     = module.dynamodb.circuit_breaker_table_name
+    TICKET_TABLE_NAME              = module.dynamodb.ticket_table_name
+    APPROVAL_TABLE_NAME            = module.dynamodb.approval_table_name
     AGENT_REGISTRY_TABLE_NAME      = module.dynamodb.agent_registry_table_name
     RESOURCE_OWNERSHIP_TABLE_NAME  = module.dynamodb.resource_ownership_table_name
     KILL_SWITCH_TABLE_NAME         = module.dynamodb.kill_switch_table_name
@@ -42,22 +42,22 @@ locals {
     AUDIT_ARCHIVE_BUCKET           = module.audit_archive.bucket_name
     REQUIRE_AGENT_ID               = tostring(var.require_agent_id)
     REQUIRE_RESOURCE_OWNERSHIP     = tostring(var.require_resource_ownership)
-    ENABLE_REAL_BEDROCK        = tostring(var.enable_real_bedrock)
-    ENABLE_REAL_GUARDRAIL_CHECKS = tostring(var.enable_real_guardrail_checks)
-    CIRCUIT_BREAKER_THRESHOLD  = tostring(var.circuit_breaker_threshold)
-    CIRCUIT_BREAKER_OPEN_SECONDS = tostring(var.circuit_breaker_open_seconds)
-    RECOVERY_STALE_SECONDS     = tostring(var.recovery_stale_seconds)
-    RECOVERY_LEASE_SECONDS     = tostring(var.recovery_lease_seconds)
-    RECOVERY_MAX_ATTEMPTS      = tostring(var.recovery_max_attempts)
-    RECOVERY_BACKOFF_SECONDS   = "60"
-    RECOVERY_MAX_BACKOFF_SECONDS = "3600"
-    RECOVERY_MAX_ITEMS         = tostring(var.recovery_max_items)
-    RECOVERY_ACTIVE_SHARDS     = tostring(var.recovery_active_shards)
-    METRICS_NAMESPACE          = local.metrics_namespace
-    ENABLE_PII_REDACTION       = tostring(var.enable_pii_redaction)
-    PII_REDACTION_SALT         = var.pii_redaction_salt
-    ENABLE_REDTEAM_OVERRIDES   = tostring(var.enable_redteam_overrides)
-    REDTEAM_OVERRIDE_ROLES      = join(",", var.redteam_override_roles)
+    ENABLE_REAL_BEDROCK            = tostring(var.enable_real_bedrock)
+    ENABLE_REAL_GUARDRAIL_CHECKS   = tostring(var.enable_real_guardrail_checks)
+    CIRCUIT_BREAKER_THRESHOLD      = tostring(var.circuit_breaker_threshold)
+    CIRCUIT_BREAKER_OPEN_SECONDS   = tostring(var.circuit_breaker_open_seconds)
+    RECOVERY_STALE_SECONDS         = tostring(var.recovery_stale_seconds)
+    RECOVERY_LEASE_SECONDS         = tostring(var.recovery_lease_seconds)
+    RECOVERY_MAX_ATTEMPTS          = tostring(var.recovery_max_attempts)
+    RECOVERY_BACKOFF_SECONDS       = "60"
+    RECOVERY_MAX_BACKOFF_SECONDS   = "3600"
+    RECOVERY_MAX_ITEMS             = tostring(var.recovery_max_items)
+    RECOVERY_ACTIVE_SHARDS         = tostring(var.recovery_active_shards)
+    METRICS_NAMESPACE              = local.metrics_namespace
+    ENABLE_PII_REDACTION           = tostring(var.enable_pii_redaction)
+    PII_REDACTION_SALT             = var.pii_redaction_salt
+    ENABLE_REDTEAM_OVERRIDES       = tostring(var.enable_redteam_overrides)
+    REDTEAM_OVERRIDE_ROLES         = join(",", var.redteam_override_roles)
   }
 
   dynamodb_crud_actions = [

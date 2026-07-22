@@ -7,7 +7,7 @@ enable_real_guardrail_checks = true
 enable_bedrock_agent         = false
 
 monthly_cost_alarm_usd = 500
-lambda_build_python = "python3.12"
+lambda_build_python    = "python3.12"
 log_retention_days     = 90
 
 cors_allowed_origins = ["https://app.example.com"]
@@ -24,8 +24,8 @@ allowed_knowledge_base_arns = [
 # Add SNS/PagerDuty/etc. action ARNs.
 alarm_actions = []
 
-require_agent_id = true
-require_resource_ownership = true
+require_agent_id                  = true
+require_resource_ownership        = true
 allow_dev_knowledge_base_wildcard = false
 
 # Immutable audit archive: COMPLIANCE mode cannot be shortened or bypassed, even by root.

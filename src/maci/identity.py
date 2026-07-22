@@ -70,7 +70,8 @@ def tenant_context_from_bedrock_agent_event(event: dict[str, Any]) -> TenantCont
     if not tenant_id or not user_id:
         raise MissingIdentityError("missing tenant/user in Bedrock Agent sessionAttributes")
 
-    agent = event.get("agent") if isinstance(event.get("agent"), dict) else {}
+    agent_raw = event.get("agent")
+    agent: dict[str, Any] = agent_raw if isinstance(agent_raw, dict) else {}
     return TenantContext(
         tenant_id=tenant_id,
         user_id=user_id,

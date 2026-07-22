@@ -590,7 +590,7 @@ def lambda_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]
     from .conversation import ConversationStore
 
     tenant_ids = _tenant_ids_from_event(event)
-    max_items = int(event.get("max_items") or os.getenv("RECOVERY_MAX_ITEMS", "25"))
+    max_items = int(event.get("max_items") or os.getenv("RECOVERY_MAX_ITEMS") or "25")
     owner_id = getattr(context, "aws_request_id", None) or event.get("owner_id") or f"recovery-{uuid4().hex[:12]}"
     daemon = RecoveryDaemon(
         workflow_store=WorkflowStateStore(),

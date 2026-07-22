@@ -58,7 +58,7 @@ def _normalize_manifest(value: Any) -> Any:
     return value
 
 
-_DEMO_MCP_BASE = {
+_DEMO_MCP_BASE: dict[str, Any] = {
     "server_id": "mcp-acme-tools",
     "tenant_id": "tenant-acme",
     "base_url": "https://mcp.example.internal/acme",

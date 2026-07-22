@@ -289,7 +289,7 @@ class RedTeamRunner:
                 step=case.channel.value,
                 text=case.payload,
             )
-        actual = "intervened" if result.action == "intervened" else "allowed"
+        actual: Literal["intervened", "allowed"] = "intervened" if result.action == "intervened" else "allowed"
         expected_actual = "intervened" if case.expected_action == "intervene" else "allowed"
         return RedTeamCaseResult(
             case_id=case.case_id,

@@ -180,18 +180,18 @@ module "auth" {
 }
 
 module "customer_lookup" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-customer-lookup"
-  description   = "Tenant-scoped customer lookup action group Lambda"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.agent_tools.customer_lookup.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-customer-lookup"
+  description           = "Tenant-scoped customer lookup action group Lambda"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.agent_tools.customer_lookup.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -210,18 +210,18 @@ module "customer_lookup" {
 }
 
 module "ticket_creation" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-ticket-creation"
-  description   = "Tenant-scoped ticket creation action group Lambda with idempotency"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.agent_tools.ticket_creation.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-ticket-creation"
+  description           = "Tenant-scoped ticket creation action group Lambda with idempotency"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.agent_tools.ticket_creation.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -247,18 +247,18 @@ module "ticket_creation" {
 
 
 module "billing_check" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-billing-check"
-  description   = "Tenant-scoped read-only billing check action group Lambda"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.agent_tools.billing_check.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-billing-check"
+  description           = "Tenant-scoped read-only billing check action group Lambda"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.agent_tools.billing_check.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -277,18 +277,18 @@ module "billing_check" {
 }
 
 module "account_credit" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-account-credit"
-  description   = "High-risk account credit action group Lambda with human approval"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.agent_tools.account_credit.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-account-credit"
+  description           = "High-risk account credit action group Lambda with human approval"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.agent_tools.account_credit.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -319,18 +319,18 @@ module "account_credit" {
 }
 
 module "approval_review" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-approval-review"
-  description   = "Human approval endpoint for high-risk agent actions"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.approval_review.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-approval-review"
+  description           = "Human approval endpoint for high-risk agent actions"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.approval_review.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -349,33 +349,33 @@ module "approval_review" {
 }
 
 module "workflow_validate" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-workflow-validate"
-  description   = "Step Functions workflow input validation"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.workflow_steps.validate_workflow_input"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-workflow-validate"
+  description           = "Step Functions workflow input validation"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.workflow_steps.validate_workflow_input"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 }
 
 module "workflow_invoke_bedrock" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-workflow-bedrock"
-  description   = "Step Functions Bedrock invocation step"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.workflow_steps.invoke_bedrock_step"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-workflow-bedrock"
+  description           = "Step Functions Bedrock invocation step"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.workflow_steps.invoke_bedrock_step"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
@@ -388,43 +388,43 @@ module "workflow_invoke_bedrock" {
 }
 
 module "workflow_finalize" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-workflow-finalize"
-  description   = "Step Functions workflow finalizer"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.workflow_steps.finalize_workflow"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-workflow-finalize"
+  description           = "Step Functions workflow finalizer"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.workflow_steps.finalize_workflow"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 }
 
 module "workflow" {
-  source      = "./modules/stepfunctions"
-  name_prefix = local.name_prefix
-  definition_path = local.workflow_definition_path
-  validate_lambda_arn = module.workflow_validate.function_arn
+  source                    = "./modules/stepfunctions"
+  name_prefix               = local.name_prefix
+  definition_path           = local.workflow_definition_path
+  validate_lambda_arn       = module.workflow_validate.function_arn
   invoke_bedrock_lambda_arn = module.workflow_invoke_bedrock.function_arn
-  finalize_lambda_arn = module.workflow_finalize.function_arn
-  log_retention_days = var.log_retention_days
-  tags = local.tags
+  finalize_lambda_arn       = module.workflow_finalize.function_arn
+  log_retention_days        = var.log_retention_days
+  tags                      = local.tags
 }
 
 module "request_router" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-request-router"
-  description   = "Public deterministic Maci request boundary"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.request_router.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
+  source                         = "./modules/lambda_function"
+  function_name                  = "${local.name_prefix}-request-router"
+  description                    = "Public deterministic Maci request boundary"
+  source_dir                     = local.source_dir
+  python_bin                     = var.lambda_build_python
+  handler                        = "maci.request_router.lambda_handler"
+  runtime                        = "python3.12"
+  memory_size                    = var.lambda_memory_size
+  timeout                        = var.lambda_timeout_seconds
   reserved_concurrent_executions = var.request_router_reserved_concurrency
-  log_retention_days = var.log_retention_days
+  log_retention_days             = var.log_retention_days
 
   environment_variables = merge(local.common_lambda_environment, {
     WORKFLOW_STATE_MACHINE_ARN = module.workflow.state_machine_arn
@@ -438,9 +438,9 @@ module "request_router" {
   policy_statements = concat(
     [
       {
-        Sid      = "ManageControlPlaneTables"
-        Effect   = "Allow"
-        Action   = local.dynamodb_crud_actions
+        Sid    = "ManageControlPlaneTables"
+        Effect = "Allow"
+        Action = local.dynamodb_crud_actions
         Resource = [
           module.dynamodb.policy_table_arn,
           module.dynamodb.usage_table_arn,
@@ -481,9 +481,9 @@ module "request_router" {
         Resource = [module.workflow.state_machine_arn]
       },
       {
-        Sid      = "InvokeAllowlistedFoundationModels"
-        Effect   = "Allow"
-        Action   = [
+        Sid    = "InvokeAllowlistedFoundationModels"
+        Effect = "Allow"
+        Action = [
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:Converse",
@@ -513,25 +513,25 @@ module "request_router" {
 
 
 module "recovery_daemon" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-recovery-daemon"
-  description   = "Scheduled lease-based recovery daemon for stale governed agent workflows"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.recovery.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = 60
+  source                         = "./modules/lambda_function"
+  function_name                  = "${local.name_prefix}-recovery-daemon"
+  description                    = "Scheduled lease-based recovery daemon for stale governed agent workflows"
+  source_dir                     = local.source_dir
+  python_bin                     = var.lambda_build_python
+  handler                        = "maci.recovery.lambda_handler"
+  runtime                        = "python3.12"
+  memory_size                    = var.lambda_memory_size
+  timeout                        = 60
   reserved_concurrent_executions = 1
-  log_retention_days = var.log_retention_days
-  environment_variables = local.common_lambda_environment
-  tags = local.tags
+  log_retention_days             = var.log_retention_days
+  environment_variables          = local.common_lambda_environment
+  tags                           = local.tags
 
   policy_statements = [
     {
-      Sid      = "ManageRecoveryTables"
-      Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Sid    = "ManageRecoveryTables"
+      Effect = "Allow"
+      Action = local.dynamodb_crud_actions
       Resource = [
         module.dynamodb.workflow_state_table_arn,
         module.dynamodb.conversation_table_arn,
@@ -577,24 +577,24 @@ resource "aws_lambda_permission" "allow_eventbridge_recovery_daemon" {
 
 
 module "admin" {
-  source        = "./modules/lambda_function"
-  function_name = "${local.name_prefix}-admin"
-  description   = "Role-gated Maci control-plane admin endpoint"
-  source_dir    = local.source_dir
-  python_bin    = var.lambda_build_python
-  handler       = "maci.admin.handler.lambda_handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory_size
-  timeout       = var.lambda_timeout_seconds
-  log_retention_days = var.log_retention_days
+  source                = "./modules/lambda_function"
+  function_name         = "${local.name_prefix}-admin"
+  description           = "Role-gated Maci control-plane admin endpoint"
+  source_dir            = local.source_dir
+  python_bin            = var.lambda_build_python
+  handler               = "maci.admin.handler.lambda_handler"
+  runtime               = "python3.12"
+  memory_size           = var.lambda_memory_size
+  timeout               = var.lambda_timeout_seconds
+  log_retention_days    = var.log_retention_days
   environment_variables = local.common_lambda_environment
-  tags = local.tags
+  tags                  = local.tags
 
   policy_statements = [
     {
-      Sid      = "ManageControlPlaneAdminTables"
-      Effect   = "Allow"
-      Action   = local.dynamodb_crud_actions
+      Sid    = "ManageControlPlaneAdminTables"
+      Effect = "Allow"
+      Action = local.dynamodb_crud_actions
       Resource = [
         module.dynamodb.agent_registry_table_arn,
         module.dynamodb.resource_ownership_table_arn,
@@ -611,9 +611,9 @@ module "admin" {
 }
 
 module "api" {
-  source      = "./modules/api"
-  name_prefix = local.name_prefix
-  environment = var.environment
+  source                        = "./modules/api"
+  name_prefix                   = local.name_prefix
+  environment                   = var.environment
   lambda_function_name          = module.request_router.function_name
   lambda_invoke_arn             = module.request_router.invoke_arn
   approval_lambda_function_name = module.approval_review.function_name
@@ -621,15 +621,15 @@ module "api" {
   admin_lambda_function_name    = module.admin.function_name
   admin_lambda_invoke_arn       = module.admin.invoke_arn
   jwt_issuer                    = module.auth.issuer
-  jwt_audience         = [module.auth.user_pool_client_id]
-  cors_allowed_origins      = var.cors_allowed_origins
-  log_retention_days        = var.log_retention_days
-  throttling_burst_limit    = var.api_throttling_burst_limit
-  throttling_rate_limit     = var.api_throttling_rate_limit
-  enable_waf                = var.enable_api_waf
-  waf_rate_limit_per_5min   = var.waf_rate_limit_per_5min
-  waf_blocked_country_codes = var.waf_blocked_country_codes
-  tags = local.tags
+  jwt_audience                  = [module.auth.user_pool_client_id]
+  cors_allowed_origins          = var.cors_allowed_origins
+  log_retention_days            = var.log_retention_days
+  throttling_burst_limit        = var.api_throttling_burst_limit
+  throttling_rate_limit         = var.api_throttling_rate_limit
+  enable_waf                    = var.enable_api_waf
+  waf_rate_limit_per_5min       = var.waf_rate_limit_per_5min
+  waf_blocked_country_codes     = var.waf_blocked_country_codes
+  tags                          = local.tags
 }
 
 locals {
@@ -639,8 +639,8 @@ locals {
       "ticket_creation",
       "billing_check",
       "account_credit"
-    ])) : "${pair[1]}-${replace(replace(pair[0], ":", "-"), "/", "-")}" => {
-      source_arn    = pair[0]
+      ])) : "${pair[1]}-${replace(replace(pair[0], ":", "-"), "/", "-")}" => {
+      source_arn = pair[0]
       function_name = {
         customer_lookup = module.customer_lookup.function_name
         ticket_creation = module.ticket_creation.function_name
@@ -662,12 +662,12 @@ resource "aws_lambda_permission" "bedrock_tool_invoke" {
 }
 
 module "observability" {
-  source      = "./modules/observability"
-  name_prefix = local.name_prefix
-  environment = var.environment
-  aws_region  = var.aws_region
-  metrics_namespace = local.metrics_namespace
-  api_name = module.api.api_name
+  source                = "./modules/observability"
+  name_prefix           = local.name_prefix
+  environment           = var.environment
+  aws_region            = var.aws_region
+  metrics_namespace     = local.metrics_namespace
+  api_name              = module.api.api_name
   lambda_function_names = local.all_lambda_function_names
   dynamodb_table_names = [
     module.dynamodb.audit_table_name,
@@ -685,6 +685,6 @@ module "observability" {
     module.dynamodb.idempotency_table_name
   ]
   monthly_cost_alarm_usd = var.monthly_cost_alarm_usd
-  alarm_actions = var.alarm_actions
-  tags = local.tags
+  alarm_actions          = var.alarm_actions
+  tags                   = local.tags
 }

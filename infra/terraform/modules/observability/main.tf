@@ -29,10 +29,10 @@ resource "aws_cloudwatch_dashboard" "this" {
         width  = 12
         height = 6
         properties = {
-          region = var.aws_region
-          title  = "Estimated Maci cost"
-          period = 300
-          stat   = "Sum"
+          region  = var.aws_region
+          title   = "Estimated Maci cost"
+          period  = 300
+          stat    = "Sum"
           metrics = [[var.metrics_namespace, "EstimatedCostUsd"]]
         }
       },
@@ -43,10 +43,10 @@ resource "aws_cloudwatch_dashboard" "this" {
         width  = 24
         height = 6
         properties = {
-          region = var.aws_region
-          title  = "Lambda errors"
-          period = 300
-          stat   = "Sum"
+          region  = var.aws_region
+          title   = "Lambda errors"
+          period  = 300
+          stat    = "Sum"
           metrics = [for name in var.lambda_function_names : ["AWS/Lambda", "Errors", "FunctionName", name]]
         }
       }
