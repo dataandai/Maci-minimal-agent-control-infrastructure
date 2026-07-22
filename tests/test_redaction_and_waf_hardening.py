@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from maci.audit import AuditEvent, AuditEventType, AuditLogger
@@ -78,7 +79,7 @@ def test_terraform_contains_api_waf_and_stage_throttling() -> None:
     assert "AWSManagedRulesKnownBadInputsRuleSet" in api_main
     assert "aws_wafv2_web_acl_association" in api_main
     assert "variable \"enable_waf\"" in api_vars
-    assert "enable_waf                = var.enable_api_waf" in root_main
+    assert re.search(r"enable_waf\s*=\s*var\.enable_api_waf", root_main)
 
 
 def test_redaction_does_not_mask_numeric_token_metrics() -> None:
