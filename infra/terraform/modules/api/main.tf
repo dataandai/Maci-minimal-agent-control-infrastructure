@@ -1,6 +1,7 @@
 resource "aws_cloudwatch_log_group" "access" {
   name              = "/aws/apigateway/${var.name_prefix}-http-api"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.logs_kms_key_arn
   tags              = var.tags
 }
 
@@ -250,4 +251,20 @@ resource "aws_wafv2_web_acl_association" "api_stage" {
   count        = var.enable_waf ? 1 : 0
   resource_arn = aws_apigatewayv2_stage.this.arn
   web_acl_arn  = aws_wafv2_web_acl.api[0].arn
+}
+
+# WAF traffic logging (CKV2_AWS_31). CloudWatch destination log groups must be
+# named with the aws-waf-logs- prefix.
+resource "aws_cloudwatch_log_group" "waf" {
+  count             = var.enable_waf ? 1 : 0
+  name              = "aws-waf-logs-${var.name_prefix}-api"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.logs_kms_key_arn
+  tags              = var.tags
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "api" {
+  count                   = var.enable_waf ? 1 : 0
+  log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
+  resource_arn            = aws_wafv2_web_acl.api[0].arn
 }

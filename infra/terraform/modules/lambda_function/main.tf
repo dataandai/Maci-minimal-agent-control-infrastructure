@@ -9,6 +9,7 @@ locals {
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/aws/lambda/${var.function_name}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = var.tags
 }
 
@@ -46,6 +47,9 @@ resource "aws_iam_role_policy" "inline" {
   name  = "${var.function_name}-inline"
   role  = aws_iam_role.this.id
 
+  # Callers pass statements scoped to specific table/bucket ARNs; object-level
+  # writes (e.g. s3:PutObject on <bucket-arn>/*) are prefix-scoped by design.
+  #tfsec:ignore:aws-iam-no-policy-wildcards
   policy = jsonencode({
     Version   = "2012-10-17"
     Statement = var.policy_statements
@@ -90,6 +94,9 @@ resource "aws_lambda_function" "this" {
   source_code_hash = data.archive_file.package.output_base64sha256
 
   reserved_concurrent_executions = var.reserved_concurrent_executions
+
+  # Encrypt environment variables with the shared data CMK (CKV_AWS_173).
+  kms_key_arn = var.kms_key_arn
 
   tracing_config {
     mode = "Active"

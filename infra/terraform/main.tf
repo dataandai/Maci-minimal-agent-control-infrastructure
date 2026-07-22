@@ -76,10 +76,22 @@ data "aws_iam_policy_document" "conversation_transcripts_tls" {
 }
 
 # Server access logging for the transcript bucket.
+#tfsec:ignore:aws-s3-encryption-customer-key S3 access-log delivery only supports SSE-S3 destination buckets
+#tfsec:ignore:aws-s3-enable-bucket-logging This is the log-target bucket itself; logging to itself would loop
 resource "aws_s3_bucket" "access_logs" {
+  # S3 server access logging can only deliver to SSE-S3 (AES256) destination
+  # buckets; SSE-KMS default encryption on the target is not supported by AWS.
+  #checkov:skip=CKV_AWS_145:S3 access-log delivery does not support SSE-KMS destination buckets; SSE-S3 is enforced instead
   bucket        = "${local.name_prefix}-access-logs-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
   force_destroy = var.environment == "dev"
   tags          = merge(local.tags, { DataClass = "access-logs" })
+}
+
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "access_logs" {
@@ -90,6 +102,7 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
   restrict_public_buckets = true
 }
 
+#tfsec:ignore:aws-s3-encryption-customer-key S3 access-log delivery only supports SSE-S3 (AES256) destination buckets
 resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   bucket = aws_s3_bucket.access_logs.id
   rule {
@@ -108,6 +121,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
     expiration {
       days = var.log_retention_days
     }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
@@ -120,6 +136,7 @@ data "aws_iam_policy_document" "access_logs" {
       type        = "Service"
       identifiers = ["logging.s3.amazonaws.com"]
     }
+    #tfsec:ignore:aws-iam-no-policy-wildcards Object-level grant scoped to the log bucket ARN prefix; S3 log delivery requires it
     resources = ["${aws_s3_bucket.access_logs.arn}/*"]
     condition {
       test     = "StringEquals"
@@ -168,6 +185,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "conversation_transcripts" {
     expiration {
       days = var.conversation_transcript_retention_days
     }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
@@ -181,6 +202,7 @@ module "auth" {
 
 module "customer_lookup" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-customer-lookup"
   description           = "Tenant-scoped customer lookup action group Lambda"
   source_dir            = local.source_dir
@@ -211,6 +233,7 @@ module "customer_lookup" {
 
 module "ticket_creation" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-ticket-creation"
   description           = "Tenant-scoped ticket creation action group Lambda with idempotency"
   source_dir            = local.source_dir
@@ -248,6 +271,7 @@ module "ticket_creation" {
 
 module "billing_check" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-billing-check"
   description           = "Tenant-scoped read-only billing check action group Lambda"
   source_dir            = local.source_dir
@@ -278,6 +302,7 @@ module "billing_check" {
 
 module "account_credit" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-account-credit"
   description           = "High-risk account credit action group Lambda with human approval"
   source_dir            = local.source_dir
@@ -320,6 +345,7 @@ module "account_credit" {
 
 module "approval_review" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-approval-review"
   description           = "Human approval endpoint for high-risk agent actions"
   source_dir            = local.source_dir
@@ -350,6 +376,7 @@ module "approval_review" {
 
 module "workflow_validate" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-workflow-validate"
   description           = "Step Functions workflow input validation"
   source_dir            = local.source_dir
@@ -365,6 +392,7 @@ module "workflow_validate" {
 
 module "workflow_invoke_bedrock" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-workflow-bedrock"
   description           = "Step Functions Bedrock invocation step"
   source_dir            = local.source_dir
@@ -389,6 +417,7 @@ module "workflow_invoke_bedrock" {
 
 module "workflow_finalize" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-workflow-finalize"
   description           = "Step Functions workflow finalizer"
   source_dir            = local.source_dir
@@ -404,6 +433,7 @@ module "workflow_finalize" {
 
 module "workflow" {
   source                    = "./modules/stepfunctions"
+  kms_key_arn               = aws_kms_key.data.arn
   name_prefix               = local.name_prefix
   definition_path           = local.workflow_definition_path
   validate_lambda_arn       = module.workflow_validate.function_arn
@@ -415,6 +445,7 @@ module "workflow" {
 
 module "request_router" {
   source                         = "./modules/lambda_function"
+  kms_key_arn                    = aws_kms_key.data.arn
   function_name                  = "${local.name_prefix}-request-router"
   description                    = "Public deterministic Maci request boundary"
   source_dir                     = local.source_dir
@@ -514,6 +545,7 @@ module "request_router" {
 
 module "recovery_daemon" {
   source                         = "./modules/lambda_function"
+  kms_key_arn                    = aws_kms_key.data.arn
   function_name                  = "${local.name_prefix}-recovery-daemon"
   description                    = "Scheduled lease-based recovery daemon for stale governed agent workflows"
   source_dir                     = local.source_dir
@@ -578,6 +610,7 @@ resource "aws_lambda_permission" "allow_eventbridge_recovery_daemon" {
 
 module "admin" {
   source                = "./modules/lambda_function"
+  kms_key_arn           = aws_kms_key.data.arn
   function_name         = "${local.name_prefix}-admin"
   description           = "Role-gated Maci control-plane admin endpoint"
   source_dir            = local.source_dir
@@ -612,6 +645,7 @@ module "admin" {
 
 module "api" {
   source                        = "./modules/api"
+  logs_kms_key_arn              = aws_kms_key.data.arn
   name_prefix                   = local.name_prefix
   environment                   = var.environment
   lambda_function_name          = module.request_router.function_name

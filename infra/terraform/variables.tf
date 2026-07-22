@@ -123,9 +123,9 @@ variable "circuit_breaker_open_seconds" {
 }
 
 variable "log_retention_days" {
-  description = "CloudWatch Logs retention for Lambda and API access logs."
+  description = "CloudWatch Logs retention for Lambda and API access logs. Kept at >= 365 days to satisfy audit-retention controls (CKV_AWS_338)."
   type        = number
-  default     = 30
+  default     = 365
 }
 
 variable "conversation_transcript_retention_days" {

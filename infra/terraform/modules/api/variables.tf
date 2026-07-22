@@ -18,7 +18,12 @@ variable "cors_allowed_origins" {
 }
 variable "log_retention_days" {
   type    = number
-  default = 30
+  default = 365
+}
+variable "logs_kms_key_arn" {
+  description = "CMK used to encrypt API access-log and WAF-log CloudWatch log groups. Null falls back to AWS-managed encryption."
+  type        = string
+  default     = null
 }
 variable "tags" {
   type    = map(string)

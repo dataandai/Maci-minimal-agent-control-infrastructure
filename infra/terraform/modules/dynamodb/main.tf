@@ -102,6 +102,10 @@ resource "aws_dynamodb_table" "circuit_breaker" {
     kms_key_arn = var.kms_key_arn != "" ? var.kms_key_arn : null
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
   ttl {
     attribute_name = "expires_at_epoch"
     enabled        = true

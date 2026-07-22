@@ -37,7 +37,12 @@ variable "policy_statements" {
 }
 variable "log_retention_days" {
   type    = number
-  default = 30
+  default = 365
+}
+variable "kms_key_arn" {
+  description = "CMK used to encrypt the function's CloudWatch log group and environment variables. Null falls back to AWS-managed encryption."
+  type        = string
+  default     = null
 }
 variable "tags" {
   type    = map(string)

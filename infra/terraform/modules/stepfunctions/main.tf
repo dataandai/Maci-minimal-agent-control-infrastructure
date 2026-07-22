@@ -1,6 +1,7 @@
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/aws/vendedlogs/states/${var.name_prefix}-workflow"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.kms_key_arn
   tags              = var.tags
 }
 
@@ -27,6 +28,9 @@ resource "aws_iam_role_policy" "this" {
   name = "${var.name_prefix}-workflow-policy"
   role = aws_iam_role.this.id
 
+  # The logs:*LogDelivery actions used by Step Functions vended logging do not
+  # support resource-level scoping and require Resource "*" per AWS docs.
+  #tfsec:ignore:aws-iam-no-policy-wildcards
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

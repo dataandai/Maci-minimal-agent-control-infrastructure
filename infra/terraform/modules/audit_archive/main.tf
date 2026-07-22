@@ -70,6 +70,23 @@ resource "aws_s3_bucket_policy" "archive" {
   policy = data.aws_iam_policy_document.archive_tls.json
 }
 
+# Objects are retained indefinitely under Object Lock; the lifecycle rule only
+# cleans up stale incomplete multipart uploads.
+resource "aws_s3_bucket_lifecycle_configuration" "archive" {
+  bucket = aws_s3_bucket.archive.id
+
+  rule {
+    id     = "abort-incomplete-multipart-uploads"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 resource "aws_s3_bucket_logging" "archive" {
   count         = var.log_bucket_id == "" ? 0 : 1
   bucket        = aws_s3_bucket.archive.id

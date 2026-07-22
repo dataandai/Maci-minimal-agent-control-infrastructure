@@ -8,7 +8,7 @@ enable_bedrock_agent         = false
 
 monthly_cost_alarm_usd = 500
 lambda_build_python    = "python3.12"
-log_retention_days     = 90
+log_retention_days     = 365
 
 cors_allowed_origins = ["https://app.example.com"]
 

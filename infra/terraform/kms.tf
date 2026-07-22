@@ -4,6 +4,13 @@
 # which is not acceptable for tenant PII and a tamper-evident audit trail.
 
 data "aws_iam_policy_document" "data_key" {
+  # In a KMS *key policy* document, resources = ["*"] means "this key" and is
+  # required syntax, not an over-broad grant. Checkov cannot distinguish key
+  # policies from identity policies on aws_iam_policy_document, so these three
+  # findings are false positives here:
+  #checkov:skip=CKV_AWS_109:Key policy resources=["*"] refers to this key only; admin is root-delegated by design
+  #checkov:skip=CKV_AWS_111:Key policy resources=["*"] refers to this key only; usage is condition-scoped to MACI roles via service
+  #checkov:skip=CKV_AWS_356:Key policy resources=["*"] refers to this key only (required key-policy syntax)
   # Root delegation so the key stays manageable via IAM and is never orphaned.
   statement {
     sid    = "EnableAccountAdmin"
@@ -41,7 +48,8 @@ data "aws_iam_policy_document" "data_key" {
       variable = "kms:ViaService"
       values = [
         "dynamodb.${var.aws_region}.amazonaws.com",
-        "s3.${var.aws_region}.amazonaws.com"
+        "s3.${var.aws_region}.amazonaws.com",
+        "lambda.${var.aws_region}.amazonaws.com"
       ]
     }
 
@@ -49,6 +57,31 @@ data "aws_iam_policy_document" "data_key" {
       test     = "ArnLike"
       variable = "aws:PrincipalArn"
       values   = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-*-role"]
+    }
+  }
+
+  # Allow CloudWatch Logs in this account/region to encrypt log groups with
+  # this key, scoped by encryption context to log group ARNs in this account.
+  statement {
+    sid    = "AllowCloudWatchLogs"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.aws_region}.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:*"]
     }
   }
 }
